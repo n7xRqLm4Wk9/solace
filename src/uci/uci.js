@@ -98,6 +98,7 @@ export class UciEngine {
       case 'setoption': this.cmdSetOption(tokens); break;
       case 'ucinewgame':
         this.searcher.clearHash();
+        this.stopSearch();
         this.breakSearchState();
         this.position.setFen(START_FEN);
         break;
@@ -107,6 +108,8 @@ export class UciEngine {
       case 'ponderhit': this.cmdPonderhit(); break;
       case 'quit':
         this.quitRequested = true;
+        // Report the move of a search that is still running before leaving.
+        this.stopSearch();
         this.breakSearchState();
         return false;
       case 'd':
@@ -190,6 +193,9 @@ export class UciEngine {
   }
 
   cmdPosition(tokens) {
+    // A position command that arrives mid-search ends that search: the old
+    // position is about to be replaced, so its result is no longer useful.
+    if (this.searching) this.stopSearch();
     let index = 1;
     let fen;
     if (tokens[index] === 'startpos') {
@@ -235,10 +241,8 @@ export class UciEngine {
   }
 
   cmdGo(tokens) {
-    if (this.searching) {
-      this.send('info string already searching');
-      return;
-    }
+    // A new "go" cancels whatever is running (same rule as "position").
+    if (this.searching) this.stopSearch();
     const limits = {};
     this.pondering = false;
     for (let i = 1; i < tokens.length; i++) {
@@ -267,11 +271,18 @@ export class UciEngine {
   }
 
   cmdStop() {
-    if (!this.searching) {
-      // Nothing is searching; nothing to stop.
-      return;
-    }
+    this.stopSearch();
+  }
+
+  /**
+   * Stop a running search and send its ``bestmove``.  Safe to call when no
+   * search is running.  Because the engine is single threaded, this can only
+   * run between two search iterations, so no iteration is ever cut in half.
+   */
+  stopSearch() {
+    if (!this.searching) return;
     this.searcher.stop();
+    this.finishSearch();
   }
 
   cmdPonderhit() {
