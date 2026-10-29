@@ -320,6 +320,9 @@ async function main() {
         hashMB: Number(flags.hash ?? 32),
         maxMoves: Number(flags['max-moves'] ?? 240),
         quiet: Boolean(flags.quiet),
+        fen: flags.fen ? String(flags.fen) : undefined,
+        // --no-openings starts every game from the initial position.
+        openings: flags['no-openings'] ? [] : undefined,
       });
       break;
     }

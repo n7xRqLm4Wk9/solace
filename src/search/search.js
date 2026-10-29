@@ -63,9 +63,11 @@ const CAPTURE_VALUES = [0, 100, 320, 335, 500, 950, 0];
  *   - insufficient material
  */
 export function isImmediateDraw(position) {
-  return position.halfmove >= 100
-    || position.hasInsufficientMaterial()
-    || position.repetitionCount() > 0;
+  if (position.halfmove >= 100) return true;
+  if (position.repetitionCount() > 0) return true;
+  // With more than four men on the board the material is always sufficient,
+  // so the (slightly longer) check is skipped in almost every node.
+  return position.pieceTotal <= 4 && position.hasInsufficientMaterial();
 }
 
 export class Searcher {

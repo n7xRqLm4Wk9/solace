@@ -62,13 +62,25 @@ test('insufficient material: king and minor against king', () => {
   assert(new Position().setFen('4k3/8/8/8/8/8/8/2B1K3 w - - 0 1').hasInsufficientMaterial());
 });
 
-test('insufficient material: opposite coloured bishops', () => {
-  // White bishop on c1 (dark), black bishop on f8 (dark)? c1 and f8 are both dark.
-  // Use a light/dark pair instead: white Bc4 (light), black Bf8 (dark).
-  assert(new Position().setFen('5b2/4k3/8/8/2B5/8/8/4K3 w - - 0 1').hasInsufficientMaterial(),
-    'bishops on opposite colours cannot mate');
-  assert(!new Position().setFen('5b2/4k3/8/8/3B4/8/8/4K3 w - - 0 1').hasInsufficientMaterial(),
-    'same-coloured bishops are not an automatic dead position');
+test('insufficient material: two bishops on the same colour', () => {
+  // a1 is dark, so a square is dark when (file + rank) is even.
+  // Bf8 (5+7=12, dark) and Bd4 (3+3=6, dark) run on the same squares: the
+  // defending bishop can never block a flight square of its own king, so mate
+  // is impossible and the position is dead.
+  assert(new Position().setFen('5b2/4k3/8/8/3B4/8/8/4K3 w - - 0 1').hasInsufficientMaterial(),
+    'bishops on one colour can never mate');
+
+  // Bf8 (dark) and Bc4 (2+3=5, light) can mate with the defender's help, so
+  // the position is not dead.
+  assert(!new Position().setFen('5b2/4k3/8/8/2B5/8/8/4K3 w - - 0 1').hasInsufficientMaterial(),
+    'opposite-coloured bishops can still mate with help');
+});
+
+test('K+2B vs K and K+N+N vs K are not dead positions', () => {
+  assert(!new Position().setFen('4k3/8/8/8/8/8/8/2B1KB2 w - - 0 1').hasInsufficientMaterial(),
+    'two bishops win by force');
+  assert(!new Position().setFen('4k3/8/8/8/8/8/8/1N2K1N1 w - - 0 1').hasInsufficientMaterial(),
+    'two knights can mate with help');
 });
 
 test('material with pawns or majors is sufficient', () => {

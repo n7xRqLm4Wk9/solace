@@ -35,7 +35,7 @@ import {
   MoveList, encodeMove, moveFrom, moveTo, moveFlag, promotionType,
   FLAG_QUIET, FLAG_CAPTURE, FLAG_DOUBLE_PUSH, FLAG_EN_PASSANT,
   FLAG_CASTLE_KING, FLAG_CASTLE_QUEEN, FLAG_PROMO_Q, FLAG_PROMO_CAP_Q,
-  promotionFlag, PROMOTION_CHARS, CHAR_TO_PIECE,
+  promotionFlag, CHAR_TO_PIECE,
 } from './moves.js';
 
 const MAX_HISTORY = 2048;
@@ -61,6 +61,8 @@ export class Position {
     this.colourHi = new Int32Array(2);
     this.occLo = 0;
     this.occHi = 0;
+    /** Total number of pieces on the board (both colours, kings included). */
+    this.pieceTotal = 0;
     this.counts = new Int32Array(15);    // number of pieces per board code
     this.kingSq = new Int32Array(2);     // king square per colour
     this.side = WHITE;
@@ -93,6 +95,8 @@ export class Position {
     this.colourHi.fill(0);
     this.occLo = 0;
     this.occHi = 0;
+    /** Total number of pieces on the board (both colours, kings included). */
+    this.pieceTotal = 0;
     this.counts.fill(0);
     this.kingSq[WHITE] = -1;
     this.kingSq[BLACK] = -1;
@@ -124,6 +128,7 @@ export class Position {
     this.occLo |= lo;
     this.occHi |= hi;
     this.counts[code]++;
+    this.pieceTotal++;
     this.keyLo ^= PIECE_LO[code * 64 + sq];
     this.keyHi ^= PIECE_HI[code * 64 + sq];
   }
@@ -141,6 +146,7 @@ export class Position {
     this.occLo &= ~lo;
     this.occHi &= ~hi;
     this.counts[code]--;
+    this.pieceTotal--;
     this.keyLo ^= PIECE_LO[code * 64 + sq];
     this.keyHi ^= PIECE_HI[code * 64 + sq];
   }
@@ -674,10 +680,7 @@ export class Position {
     }
     this.keyLo ^= SIDE_LO;
     this.keyHi ^= SIDE_HI;
-    this.keyLo ^= CASTLING_LO[this.castling];
-    this.keyHi ^= CASTLING_HI[this.castling];
-    this.keyLo ^= CASTLING_LO[this.castling];
-    this.keyHi ^= CASTLING_HI[this.castling];
+    // Castling rights are unchanged by a null move, so their key is unchanged.
 
     this.epSquare = -1;
     this.epKeyIncluded = false;
@@ -742,17 +745,19 @@ export class Position {
     if (minorCount === 0) return true;               // K vs K
     if (minorCount === 1) return true;               // K+minor vs K
     if (wN === 0 && bN === 0 && wB === 1 && bB === 1) {
-      // Opposite-coloured bishops only.
+      // One bishop each.  Mate needs the defending bishop to block a flight
+      // square of its own king, which is only possible when the bishops run on
+      // the same squares; two bishops on one colour is a dead position.
       const wSq = this.firstBishopSquare(WHITE);
       const bSq = this.firstBishopSquare(BLACK);
       if (wSq >= 0 && bSq >= 0) {
         const wColour = (fileOf(wSq) + rankOf(wSq)) & 1;
         const bColour = (fileOf(bSq) + rankOf(bSq)) & 1;
-        return wColour !== bColour;
+        return wColour === bColour;
       }
     }
-    if (wB === 2 && bB === 0 && minorCount === 2) return wB === 2; // K+2B vs K is a win
-    if (bB === 2 && wB === 0 && minorCount === 2) return false;
+    // K+2B vs K and K+N+N vs K are not dead positions: mate is possible there
+    // (K+2B forces it, K+N+N needs help), so neither counts as insufficient.
     return false;
   }
 
@@ -948,6 +953,7 @@ export class Position {
     copy.colourHi.set(this.colourHi);
     copy.occLo = this.occLo;
     copy.occHi = this.occHi;
+    copy.pieceTotal = this.pieceTotal;
     copy.counts.set(this.counts);
     copy.kingSq.set(this.kingSq);
     copy.side = this.side;
@@ -1002,5 +1008,3 @@ export function createPosition(fen) {
   else pos.setStartPosition();
   return pos;
 }
-
-export { PROMOTION_CHARS };

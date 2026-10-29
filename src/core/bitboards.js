@@ -12,7 +12,7 @@
 
 import {
   WHITE, BLACK, KNIGHT, KING, PAWN,
-  lsbIndex, mulShi32, productWord1,
+  lsbIndex, productWord1,
 } from './types.js';
 import {
   ROOK_MAGIC_LO, ROOK_MAGIC_HI, BISHOP_MAGIC_LO, BISHOP_MAGIC_HI,
@@ -305,5 +305,3 @@ export function squaresOf(lo, hi) {
   }
   return out;
 }
-
-export { mulShi32 };
