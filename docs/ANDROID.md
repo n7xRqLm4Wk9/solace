@@ -75,7 +75,7 @@ It is the only app you need.
 4. Run the automated tests. This is the first thing to do on a new device:
 
    ```sh
-   node tests/run.js          # 136 tests, a few seconds
+   node tests/run.js          # 140 tests, a few seconds
    node tests/run.js movegen  # one suite: movegen, fen, eval, draw, search, uci, tools, web
    ```
 

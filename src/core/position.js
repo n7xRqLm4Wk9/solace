@@ -18,7 +18,7 @@
 
 import {
   WHITE, BLACK, PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING,
-  EMPTY, makePiece, pieceIndex,
+  EMPTY, makePiece,
   CASTLE_WK, CASTLE_WQ, CASTLE_BK, CASTLE_BQ, CASTLE_ALL,
   CASTLE_ROOK_FROM, CASTLE_ROOK_TO,
   rankOf, fileOf, squareName, parseSquare,
@@ -26,7 +26,7 @@ import {
 import {
   ATK_LO, ATK_HI, KNIGHT_ATK_LO, KNIGHT_ATK_HI, KING_ATK_LO, KING_ATK_HI,
   PAWN_ATK_LO, PAWN_ATK_HI,
-  knightAttacks, kingAttacks, bishopAttacks, rookAttacks, queenAttacks,
+  kingAttacks, bishopAttacks, rookAttacks, queenAttacks,
 } from './bitboards.js';
 import {
   PIECE_LO, PIECE_HI, SIDE_LO, SIDE_HI, CASTLING_LO, CASTLING_HI, EP_FILE_LO, EP_FILE_HI,

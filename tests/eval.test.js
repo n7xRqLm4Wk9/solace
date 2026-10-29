@@ -10,7 +10,7 @@
 import { test, assert, assertEqual } from './harness.js';
 import { Position } from '../src/core/position.js';
 import { evaluate, evaluateAbsolute, evaluateBreakdown, currentPhase } from '../src/eval/evaluate.js';
-import { WHITE, BLACK } from '../src/core/types.js';
+
 
 /** Mirror a FEN: swap colours, flip the board vertically and swap the side. */
 export function mirrorFen(fen) {

@@ -18,7 +18,7 @@
 
 import { createInterface } from 'node:readline';
 import { Position } from './src/core/position.js';
-import { UciEngine, ENGINE_NAME, ENGINE_VERSION } from './src/uci/uci.js';
+import { UciEngine, ENGINE_VERSION } from './src/uci/uci.js';
 import { perft, perftDivide } from './src/search/perft.js';
 import { moveToUci, MoveList } from './src/core/moves.js';
 import { Searcher } from './src/search/search.js';

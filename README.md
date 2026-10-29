@@ -5,7 +5,7 @@ It has its own move generation, its own handcrafted evaluation and its own
 search: no Stockfish, no other engine's source, no chess library, no neural
 network and no npm dependencies.
 
-* 137 automated tests, all passing (`node tests/run.js`, ~4 s).
+* 140 automated tests, all passing (`node tests/run.js`, ~4 s).
 * Exact perft results up to depth 5 on six standard positions.
 * ~0.45 M nodes/second search, ~6-7 M nodes/second perft on a laptop.
 * Plays from the command line, over UCI (any GUI), in the browser or on Android.
@@ -20,7 +20,7 @@ You need Node.js 18 or newer. Nothing else - there are no dependencies.
 git clone <this repository> solace
 cd solace
 
-node tests/run.js        # run the test suite (~4 s, 137 tests)
+node tests/run.js        # run the test suite (~4 s, 140 tests)
 node cli.js perft 4      # 197281 nodes
 node cli.js bench 5      # reproducible search benchmark
 node cli.js play         # play against it in the terminal
@@ -147,7 +147,7 @@ All numbers below were produced by actually running the code on this machine
 
 | suite | tests | result |
 | --- | --- | --- |
-| movegen, fen, eval, draw, search, uci, tools, web | 137 | **137 passed, 0 failed (~4 s)** |
+| movegen, fen, eval, draw, search, uci, tools, web | 140 | **140 passed, 0 failed (~4 s)** |
 
 ### Perft (exact reference counts)
 
@@ -198,21 +198,26 @@ That is **2.8x fewer nodes and 2.4x less time for the same fixed depth**.
 
 ### Playing strength
 
-A 24-game match (12 openings, each played with both colours, 100 ms per move,
-`node cli.js match`) of the current build against the previous one:
+Two independent 24-game matches (12 openings, each played with both colours,
+100 ms per move, `node cli.js match`) of the current build against the previous
+one:
 
 ```
-match result: +13 -4 =7 of 24 games
-score: 16.5 / 24 (68.8%)
-illegal moves: 0
+run 1: match result +13 -4 =7 of 24 games   score 16.5 / 24 (68.8%)
+run 2: match result  +9 -4 =11 of 24 games  score 14.5 / 24 (60.4%)
+combined over 48 games: +22 -8 =18          score 31 / 48 (64.6%)
+illegal moves in 48 games: 0
 ```
 
-68.8% is a large improvement, but with 24 games the 95% confidence interval is
-roughly +/-100 Elo, so treat it as "clearly stronger than before", not as a
-rating. **No Elo rating is claimed for SOLACE**: no match against a rated
-reference engine has been run yet (see [docs/STRENGTH.md](docs/STRENGTH.md) for
-the exact command to do it with Stockfish, and why it is not part of this
-report).
+That is consistent with an improvement of roughly **+100 Elo**, but with 48 games
+the 95% confidence interval is wide (about +15 to +220 Elo), so the honest claim
+is "clearly stronger than the previous build", not a rating. Games ended by
+checkmate (19), threefold repetition (8) and once each by stalemate, the
+fifty-move rule and the move limit - a useful sanity check that whole-game
+handling works. **No Elo rating is claimed for SOLACE**: no match against a
+rated reference engine has been run yet (see
+[docs/STRENGTH.md](docs/STRENGTH.md) for the exact command to do it with
+Stockfish, and why it is not part of this report).
 
 Self-play (`node cli.js selfplay --games 4 --depth 5`) completes every game with
 a real termination (checkmate, repetition or fifty-move rule), 0 illegal moves,

@@ -7,7 +7,7 @@
 
 import { test, assert, assertEqual } from './harness.js';
 import { Position } from '../src/core/position.js';
-import { Searcher, MATE, MATE_THRESHOLD } from '../src/search/search.js';
+import { Searcher, MATE_THRESHOLD } from '../src/search/search.js';
 import { MoveList, moveToUci } from '../src/core/moves.js';
 import { verifyConsistency } from '../src/core/verify.js';
 import { playRandomGame } from './helpers.js';

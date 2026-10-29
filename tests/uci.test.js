@@ -8,7 +8,7 @@
 import { test, assert, assertEqual } from './harness.js';
 import { UciEngine } from '../src/uci/uci.js';
 import { Position } from '../src/core/position.js';
-import { MoveList } from '../src/core/moves.js';
+
 
 function makeEngine() {
   const lines = [];
@@ -82,6 +82,40 @@ test('go with a clock allocation answers in time', async () => {
   const elapsed = Date.now() - started;
   assert(elapsed < 900, `should move quickly with 1 s on the clock (took ${elapsed} ms)`);
   assert(lastBestMove(lines) !== null, 'bestmove emitted');
+});
+
+test('go movetime respects the requested thinking time', async () => {
+  const { engine, lines } = makeEngine();
+  engine.handleLine('position startpos moves d2d4 d7d5 c2c4');
+  const started = Date.now();
+  engine.handleLine('go movetime 200');
+  await waitForSearchEnd(engine, 5000);
+  const elapsed = Date.now() - started;
+  assert(elapsed >= 100, `should actually think for a while (took ${elapsed} ms)`);
+  assert(elapsed < 600, `must not overshoot the 200 ms budget by much (took ${elapsed} ms)`);
+  assert(lastBestMove(lines) !== null, 'bestmove emitted');
+});
+
+test('a new position during a search ends that search with a bestmove', async () => {
+  const { engine, lines } = makeEngine();
+  engine.handleLine('position startpos');
+  engine.handleLine('go infinite');
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert(engine.searching, 'engine is searching');
+  engine.handleLine('position fen 4k3/8/8/8/8/8/8/4K2R w - - 0 1');
+  assert(!engine.searching, 'the old search was cancelled');
+  assert(lastBestMove(lines) !== null, 'the cancelled search still reported a bestmove');
+  engine.handleLine('quit');
+});
+
+test('quit reports a bestmove for a search in progress', async () => {
+  const { engine, lines } = makeEngine();
+  engine.handleLine('position startpos');
+  engine.handleLine('go infinite');
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  engine.handleLine('quit');
+  assert(!engine.searching, 'search state cleared');
+  assert(lastBestMove(lines) !== null, 'bestmove emitted before quitting');
 });
 
 test('stop during an infinite search produces a bestmove promptly', async () => {

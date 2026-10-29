@@ -18,7 +18,6 @@
 
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { Position } from '../core/position.js';
 import { DEFAULT_OPENINGS, openingPosition } from './openings.js';
 import { MoveList, moveToUci } from '../core/moves.js';
 import { adjudicate } from './selfplay.js';
@@ -102,10 +101,12 @@ class UciProcess {
     this.pendingBestmove = null;
     const fen = position.toFen();
     this.send(`position fen ${fen}`);
+    const started = Date.now();
     this.send(`go ${timeControl}`);
     const line = await this.waitFor('bestmove', 120000);
+    const elapsedMs = Date.now() - started;
     const tokens = line.split(/\s+/);
-    return { bestMove: tokens[1], raw: line };
+    return { bestMove: tokens[1], raw: line, elapsedMs };
   }
 
   quit() {
@@ -195,6 +196,11 @@ export async function runMatch(options = {}) {
     illegalMoves: 0,
     results: [],
     timeControl: timeControlSpec,
+    // Timing: a match is only meaningful if neither side loses on time.
+    moves: 0,
+    totalMoveMs: 0,
+    maxMoveMs: 0,
+    timeOverruns: 0,
   };
 
   try {
@@ -228,10 +234,18 @@ export async function runMatch(options = {}) {
 
         let bestMove;
         try {
-          if (tc.type === 'clock') {
-            bestMove = (await mover.go(position, tc.goFor(position.side))).bestMove;
-          } else {
-            bestMove = (await mover.go(position, tc.goFor())).bestMove;
+          const go = tc.type === 'clock'
+            ? await mover.go(position, tc.goFor(position.side))
+            : await mover.go(position, tc.goFor());
+          bestMove = go.bestMove;
+          summary.moves++;
+          summary.totalMoveMs += go.elapsedMs;
+          if (go.elapsedMs > summary.maxMoveMs) summary.maxMoveMs = go.elapsedMs;
+          // 50% plus 200 ms of headroom: slower than that means the engine is
+          // not respecting the requested thinking time.
+          if (tc.type === 'movetime' && go.elapsedMs > tc.ms * 1.5 + 200) {
+            summary.timeOverruns++;
+            log(`  warning: ${mover.name} took ${go.elapsedMs} ms for a ${tc.ms} ms move`);
           }
         } catch (err) {
           log(`  ${mover.name} failed: ${err.message}`);
@@ -321,6 +335,10 @@ export async function runMatch(options = {}) {
   log(`match result: +${summary.wins} -${summary.losses} =${summary.draws} of ${summary.games} games`);
   log(`score: ${score} / ${summary.games} (${rate.toFixed(1)}%)`);
   log(`illegal moves: ${summary.illegalMoves}`);
+  if (summary.moves > 0) {
+    log(`move times: average ${Math.round(summary.totalMoveMs / summary.moves)} ms, `
+      + `slowest ${summary.maxMoveMs} ms, overruns ${summary.timeOverruns}`);
+  }
   if (summary.games < 30) {
     log('note: fewer than 30 games - treat any strength estimate as indicative only, not an Elo rating');
   }

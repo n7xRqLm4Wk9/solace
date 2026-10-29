@@ -8,7 +8,7 @@
 
 import { Position } from '../src/core/position.js';
 import { MoveList, moveToUci, moveFrom, moveTo, moveFlag } from '../src/core/moves.js';
-import { squareName, parseSquare, WHITE, BLACK, FILE_A } from '../src/core/types.js';
+import { squareName, WHITE } from '../src/core/types.js';
 import { perft } from '../src/search/perft.js';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';

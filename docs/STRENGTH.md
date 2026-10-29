@@ -19,7 +19,7 @@ Before any strength work, correctness is pinned down by:
 * Zobrist keys recomputed from scratch during long random games and compared
   with the incremental keys,
 * make/unmake round trips that must return the exact starting FEN,
-* 137 automated tests (`node tests/run.js`).
+* 140 automated tests (`node tests/run.js`).
 
 A speed or strength change is only kept if the full suite still passes.
 
@@ -67,20 +67,25 @@ node cli.js match --games 24 --tc movetime:100 --max-moves 220 \
      --opponent "node /tmp/solace-base/uci-runner.mjs"
 ```
 
-Result (played after the work described above, 12 opening lines, each played
-with both colours, 100 ms per move):
+The match was run twice (12 opening lines each time, every opening played with
+both colours, 100 ms per move):
 
 ```
-match result: +13 -4 =7 of 24 games
-score: 16.5 / 24 (68.8%)
-illegal moves: 0
+run 1: +13 -4 =7  -> 16.5 / 24 (68.8%), 0 illegal moves
+run 2:  +9 -4 =11 -> 14.5 / 24 (60.4%), 0 illegal moves
+combined 48 games: +22 -8 =18 -> 31 / 48 (64.6%), 0 illegal moves
 ```
 
-**Interpretation.** 68.8% corresponds to roughly +140 Elo with a 95% confidence
-interval of about +/-100 Elo at this sample size (24 games is small: one game is
-worth about 2% and a single swing changes the interval noticeably). The honest
-claim is: *the new build is clearly stronger than the old one; the size of the
-improvement is not measured precisely.*
+Game terminations across the 48 games: 19 checkmates, 8 threefold repetitions,
+1 stalemate, 1 fifty-move draw, 1 move-limit draw, and the rest decided by
+checkmate in the other direction - i.e. every game reached a real end, no crash,
+no illegal move and no time loss.
+
+**Interpretation.** 64.6% over 48 games is roughly +100 Elo. The 95% confidence
+interval at this sample size is wide (about +15 to +220 Elo: one game is worth
+2%, so a couple of flips move the estimate by tens of Elo). The honest claim is:
+*the new build is clearly stronger than the old one; the size of the improvement
+is not measured precisely.* A tighter number needs several hundred games.
 
 The previous build also played 12 games against itself at fixed depth 6 with no
 openings: all 12 were drawn by repetition, which is expected for two identical
