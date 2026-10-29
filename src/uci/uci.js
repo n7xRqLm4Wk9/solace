@@ -9,10 +9,23 @@
  * ``output`` callback and a ``handleLine()`` method, which the Node CLI wires
  * to stdin/stdout and the browser version wires to a Web Worker.
  *
+ * Supported, all exercised by tests/uci.test.js and tests/uci-process.test.js:
+ *   uci, isready, ucinewgame, setoption, position (startpos|fen + moves), go
+ *   (depth, nodes, movetime, wtime/btime/winc/binc/movestogo, infinite,
+ *   searchmoves), stop, ponderhit, quit.
+ * Extension commands (not part of UCI, harmless for GUIs): d/board, eval,
+ * perft, bench, help.
+ *
  * Not implemented (deliberately, and documented in the README):
  *   - real pondering ("go ponder" runs as an infinite search and "ponderhit"
  *     stops it and plays the move found so far),
- *   - MultiPV > 1.
+ *   - MultiPV > 1,
+ *   - "go mate <n>" (treated as an unlimited search).
+ *
+ * Protocol hygiene: unknown commands, unknown options and the optional
+ * "debug"/"register" commands are ignored silently, as the UCI specification
+ * asks.  Set "debug on" to get an "info string" for each of them, plus an echo
+ * of the position after every "position" command.
  */
 
 import { Position } from '../core/position.js';
@@ -28,6 +41,12 @@ export const ENGINE_VERSION = '1.0.0';
 export const ENGINE_AUTHOR = 'SOLACE project';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+/** Tokens that terminate a "searchmoves" list in a "go" command. */
+const GO_KEYWORDS = new Set([
+  'searchmoves', 'ponder', 'wtime', 'btime', 'winc', 'binc', 'movestogo',
+  'depth', 'nodes', 'mate', 'movetime', 'infinite',
+]);
 
 export class UciEngine {
   /**
@@ -47,6 +66,8 @@ export class UciEngine {
     this.timer = null;
     this.quitRequested = false;
     this.pondering = false;
+    // UCI "debug on" enables chatty diagnostics (unknown commands, position echo).
+    this.debugEcho = false;
     this.applyMovesToPosition = options.applyMovesToPosition ?? false;
     this.options = {
       Hash: 16,
@@ -96,6 +117,8 @@ export class UciEngine {
       case 'uci': this.cmdUci(); break;
       case 'isready': this.send('readyok'); break;
       case 'setoption': this.cmdSetOption(tokens); break;
+      case 'debug': this.cmdDebug(tokens); break;
+      case 'register': /* optional and irrelevant here, ignore like a GUI would */ break;
       case 'ucinewgame':
         this.searcher.clearHash();
         this.stopSearch();
@@ -121,10 +144,17 @@ export class UciEngine {
       case 'bench': this.cmdBench(tokens); break;
       case 'help': this.cmdHelp(); break;
       default:
-        this.send(`info string unknown command "${command}" (try "help")`);
+        // The UCI specification expects unknown commands to be ignored; only
+        // "debug on" makes them visible.
+        if (this.debugEcho) this.send(`info string ignored unknown command "${command}"`);
         break;
     }
     return true;
+  }
+
+  cmdDebug(tokens) {
+    this.debugEcho = tokens[1] === 'on';
+    if (this.debugEcho) this.send('info string debug on');
   }
 
   cmdUci() {
@@ -139,8 +169,10 @@ export class UciEngine {
 
   cmdHelp() {
     const lines = [
-      'UCI commands: uci, isready, position startpos|fen ... [moves ...], go, stop, quit,',
-      '              setoption name <Name> value <Value>, ucinewgame',
+      'UCI commands: uci, isready, ucinewgame, setoption name <Name> value <Value>,',
+      '              position startpos|fen ... [moves ...], go [depth|nodes|movetime|',
+      '              wtime/btime/winc/binc/movestogo|infinite|searchmoves ...], stop,',
+      '              ponderhit, quit, debug on|off, register',
       'Extra commands: d (show board), eval, perft <depth>, bench [depth], help',
     ];
     for (const line of lines) this.send('info string ' + line);
@@ -187,7 +219,9 @@ export class UciEngine {
         this.send('info string hash cleared');
         break;
       default:
-        this.send(`info string unknown option "${name}"`);
+        // Unknown options (Ponder, UCI_AnalyseMode, ...) are ignored, as the
+        // specification requires.  Known options always report bad values.
+        if (this.debugEcho) this.send(`info string ignored unknown option "${name}"`);
         break;
     }
   }
@@ -236,7 +270,7 @@ export class UciEngine {
     }
 
     this.position = position;
-    this.send(`info string position set: ${position.toFen()}`);
+    if (this.debugEcho) this.send(`info string position set: ${position.toFen()}`);
     return true;
   }
 
@@ -263,7 +297,19 @@ export class UciEngine {
         case 'movetime': limits.movetime = next(); break;
         case 'infinite': limits.infinite = true; break;
         case 'ponder': limits.infinite = true; this.pondering = true; break;
-        case 'searchmoves': /* accepted and ignored */ break;
+        case 'searchmoves': {
+          // The move list runs until the next keyword.
+          const moves = [];
+          while (i + 1 < tokens.length && !GO_KEYWORDS.has(tokens[i + 1])) {
+            const text = tokens[++i];
+            const move = this.position.parseMove(text);
+            if (move) moves.push(move);
+            else if (this.debugEcho) this.send(`info string searchmoves: ignoring illegal move ${text}`);
+          }
+          if (moves.length > 0) limits.searchMoves = moves;
+          break;
+        }
+        case 'mate': next(); break; // treated as an unlimited search
         default: break;
       }
     }

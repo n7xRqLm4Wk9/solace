@@ -595,6 +595,21 @@ export class SearchSession {
     // ---- root move list ----------------------------------------------------
     searcher.rootMoves.clear();
     this.position.generateLegalMoves(searcher.rootMoves);
+    if (limits.searchMoves && limits.searchMoves.length > 0 && searcher.rootMoves.count > 0) {
+      // UCI "searchmoves": only the listed root moves are searched.  Moves that
+      // are not legal in this position are ignored; if none of them is legal
+      // the whole list is searched (a GUI error must not produce a null move).
+      const allowed = limits.searchMoves;
+      const kept = [];
+      for (let i = 0; i < searcher.rootMoves.count; i++) {
+        const move = searcher.rootMoves.moves[i];
+        if (allowed.includes(move)) kept.push(move);
+      }
+      if (kept.length > 0) {
+        searcher.rootMoves.count = kept.length;
+        for (let i = 0; i < kept.length; i++) searcher.rootMoves.moves[i] = kept[i];
+      }
+    }
     if (searcher.rootMoves.count === 0) {
       this.noLegalMoves = true;
       this.finished = true;

@@ -5,7 +5,8 @@ It has its own move generation, its own handcrafted evaluation and its own
 search: no Stockfish, no other engine's source, no chess library, no neural
 network and no npm dependencies.
 
-* 140 automated tests, all passing (`node tests/run.js`, ~4 s).
+* 160 automated tests, all passing (`node tests/run.js`, ~8 s).
+* Full UCI: verified over a real child process, not just in-process.
 * Exact perft results up to depth 5 on six standard positions.
 * ~0.45 M nodes/second search, ~6-7 M nodes/second perft on a laptop.
 * Plays from the command line, over UCI (any GUI), in the browser or on Android.
@@ -20,7 +21,7 @@ You need Node.js 18 or newer. Nothing else - there are no dependencies.
 git clone <this repository> solace
 cd solace
 
-node tests/run.js        # run the test suite (~4 s, 140 tests)
+node tests/run.js        # run the test suite (~8 s, 160 tests)
 node cli.js perft 4      # 197281 nodes
 node cli.js bench 5      # reproducible search benchmark
 node cli.js play         # play against it in the terminal
@@ -67,6 +68,29 @@ isready
 position startpos moves e2e4 e7e5
 go movetime 1000
 ```
+
+### UCI reference
+
+| command | supported |
+| --- | --- |
+| `uci`, `isready`, `ucinewgame` | yes |
+| `position startpos\|fen ... [moves ...]` | yes, with promotion parsing |
+| `go depth\|nodes\|movetime\|wtime/btime/winc/binc/movestogo\|infinite\|searchmoves` | yes |
+| `stop`, `quit` | yes (exactly one `bestmove` per search; `bestmove 0000` when there is no legal move) |
+| `setoption Hash`, `Move Overhead`, `VerifyMoves`, `Clear Hash` | yes |
+| `debug on\|off`, `register` (ignored), unknown commands (ignored silently) | yes |
+| `go ponder` + `ponderhit` | approximate (infinite search, then play the best move found) |
+| `go mate N`, MultiPV > 1 | **not supported** |
+
+There is a runnable client example in `tools/uci-client.js`:
+
+```sh
+node tools/uci-client.js --fen "<FEN>" --movetime 500
+```
+
+Integrating SOLACE into another program (child process, Web Worker or in-process)
+is described in **[docs/INTEGRATION.md](docs/INTEGRATION.md)**, together with the
+exact runtime requirements of each option.
 
 ### In the browser / on a phone
 
@@ -147,7 +171,7 @@ All numbers below were produced by actually running the code on this machine
 
 | suite | tests | result |
 | --- | --- | --- |
-| movegen, fen, eval, draw, search, uci, tools, web | 140 | **140 passed, 0 failed (~4 s)** |
+| movegen, fen, eval, draw, search, uci, uci-process, tools, web | 160 | **160 passed, 0 failed (~8 s)** |
 
 ### Perft (exact reference counts)
 
@@ -238,7 +262,7 @@ src/tools/              bench, selfplay, match, openings
 tests/                  dependency-free test suite (harness + 8 suites)
 web/                    browser UI (HTML/CSS, app.js, engine Web Worker)
 tools/                  gen-magics.js, serve.js
-docs/                   ARCHITECTURE.md, STRENGTH.md, ANDROID.md
+docs/                   ARCHITECTURE.md, INTEGRATION.md, STRENGTH.md, ANDROID.md
 ```
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains the board representation,
@@ -269,7 +293,9 @@ suites are plain Node modules. Coverage includes:
 * threefold repetition, fifty-move rule, insufficient material;
 * search termination under depth, time and node limits, legal best moves, mate
   detection, determinism, transposition-table behaviour;
-* the UCI layer end to end (options, `position`, `go`, `stop`, mate scores);
+* the UCI layer end to end (options, `position`, `go`, `stop`, `searchmoves`,
+  mate scores) **and** over a real `node cli.js` child process
+  (`tests/uci-process.test.js`), i.e. the exact transport a GUI would use;
 * the browser build: worker protocol, move legality, perft self-test.
 
 ---
@@ -283,8 +309,8 @@ suites are plain Node modules. Coverage includes:
   multiple cores. Pondering is approximated (see below).
 * **No opening book and no tablebases.** The opening lines in
   `src/tools/openings.js` are only used by the self-play and match tools.
-* **No MultiPV**, and the `uci` extension commands (`d`, `eval`, `perft`,
-  `bench`) are non-standard extras.
+* **No MultiPV** and no `go mate N` limit, and the `uci` extension commands
+  (`d`, `eval`, `perft`, `bench`, `help`) are non-standard extras.
 * **Pondering is approximate**: `go ponder` starts an infinite search and
   `ponderhit` plays the best move found so far. Matches here run with pondering
   off.

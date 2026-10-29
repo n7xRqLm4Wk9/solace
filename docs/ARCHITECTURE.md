@@ -149,9 +149,17 @@ engine in a Web Worker, so the UI thread is never blocked.
 
 `src/uci/uci.js` speaks standard UCI: `uci`, `isready`, `setoption`,
 `ucinewgame`, `position` (`startpos`/`fen` + `moves`), `go` with `wtime`/`btime`/
-`winc`/`binc`/`movestogo`/`depth`/`nodes`/`movetime`/`infinite`, `stop`,
-`ponderhit`, `quit`, plus extensions (`d`, `eval`, `perft`, `bench`, `help`) that
-are handy when playing with the engine by hand.
+`winc`/`binc`/`movestogo`/`depth`/`nodes`/`movetime`/`infinite`/`searchmoves`,
+`stop`, `ponderhit`, `quit`, `debug on|off`, plus extensions (`d`, `eval`,
+`perft`, `bench`, `help`) that are handy when playing with the engine by hand.
+
+The handler is transport agnostic: it takes an `output` callback and gets input
+through `handleLine()`, so the same code is driven by `node:readline` in `cli.js`
+and by `postMessage` in `web/engine.worker.js`. Unknown commands, unknown options
+and the optional `register` command are ignored silently (as the specification
+requires); `debug on` makes them visible and echoes the position after every
+`position` command. `searchmoves` filters the root move list inside
+`SearchSession`, so the search itself is unaware of the protocol.
 
 Options: `Hash` (1-512 MB, default 16), `Move Overhead` (default 30 ms),
 `VerifyMoves` (default off), `Clear Hash` (button).

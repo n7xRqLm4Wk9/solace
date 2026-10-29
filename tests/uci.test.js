@@ -161,13 +161,33 @@ test('board display and eval commands work', () => {
   assert(lines.some((l) => l.includes('static evaluation')), 'eval shown');
 });
 
-test('unknown commands do not crash the engine', () => {
+test('unknown commands are ignored silently, as UCI requires', () => {
   const { engine, lines } = makeEngine();
   engine.handleLine('frobnicate');
-  assert(lines.some((l) => l.includes('unknown command')), 'unknown command reported');
+  engine.handleLine('register later');
+  engine.handleLine('setoption name Ponder value false');
   engine.handleLine('   ');
   engine.handleLine('');
-  assert(true);
+  assert(lines.length === 0, `no output for unknown commands, got ${JSON.stringify(lines)}`);
+  // The engine keeps working afterwards.
+  engine.handleLine('isready');
+  assertEqual(lines[lines.length - 1], 'readyok');
+});
+
+test('debug on makes ignored commands and the position visible', () => {
+  const { engine, lines } = makeEngine();
+  engine.handleLine('debug on');
+  engine.handleLine('frobnicate');
+  engine.handleLine('position startpos moves e2e4');
+  assert(lines.some((l) => l.includes('unknown command')), 'unknown command reported in debug mode');
+  assert(
+    lines.some((l) => l.includes('rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1')),
+    'position echoed in debug mode',
+  );
+  engine.handleLine('debug off');
+  const before = lines.length;
+  engine.handleLine('position startpos');
+  assertEqual(lines.length, before, 'position is not echoed with debug off');
 });
 
 test('quit stops the search and asks the caller to exit', async () => {
@@ -185,4 +205,112 @@ test('ucinewgame resets the position', () => {
   engine.handleLine('position startpos moves e2e4 e7e5');
   engine.handleLine('ucinewgame');
   assertEqual(engine.position.toFen(), 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+});
+
+test('searchmoves restricts the searched root moves', async () => {
+  const { engine, lines } = makeEngine();
+  engine.handleLine('position startpos');
+  engine.handleLine('go depth 4 searchmoves a2a3');
+  await waitForSearchEnd(engine);
+  assertEqual(lastBestMove(lines), 'a2a3', 'only the requested move can be played');
+
+  const second = makeEngine();
+  second.engine.handleLine('position startpos');
+  second.engine.handleLine('go depth 3 searchmoves a2a3 h2h3');
+  await waitForSearchEnd(second.engine);
+  assert(
+    ['a2a3', 'h2h3'].includes(lastBestMove(second.lines)),
+    `the answer is one of the listed moves, got ${lastBestMove(second.lines)}`,
+  );
+});
+
+test('searchmoves with only illegal moves falls back to a full search', async () => {
+  const { engine, lines } = makeEngine();
+  engine.handleLine('position startpos');
+  engine.handleLine('go depth 3 searchmoves e2e5 a7a6');
+  await waitForSearchEnd(engine);
+  const best = lastBestMove(lines);
+  const position = new Position().setStartPosition();
+  assert(best && position.parseMove(best) !== 0, `a legal move is returned, got ${best}`);
+});
+
+test('searchmoves accepts a promotion move', async () => {
+  const { engine, lines } = makeEngine();
+  engine.handleLine('position fen 8/4P3/8/8/8/8/k7/4K3 w - - 0 1');
+  engine.handleLine('go depth 3 searchmoves e7e8n');
+  await waitForSearchEnd(engine);
+  assertEqual(lastBestMove(lines), 'e7e8n', 'underpromotion honoured');
+});
+
+test('go without limits searches until stop', async () => {
+  const { engine, lines } = makeEngine();
+  engine.handleLine('position startpos');
+  engine.handleLine('go');
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert(engine.searching, 'a limit-less go keeps searching');
+  assertEqual(lines.filter((l) => l.startsWith('bestmove')).length, 0, 'no bestmove before stop');
+  engine.handleLine('stop');
+  await waitForSearchEnd(engine);
+  const best = lastBestMove(lines);
+  const position = new Position().setStartPosition();
+  assert(best && position.parseMove(best) !== 0, `bestmove after stop is legal, got ${best}`);
+});
+
+test('promotions in a position move list are applied correctly', () => {
+  const { engine, lines } = makeEngine();
+  engine.handleLine('debug on');
+  engine.handleLine('position fen 8/4P3/8/8/8/8/k7/4K3 w - - 0 1 moves e7e8q');
+  const echo = lines.find((l) => l.startsWith('info string position set'));
+  assert(echo && echo.includes('4Q3'), `queen appears on e8: ${echo}`);
+  engine.handleLine('position fen 8/4P3/8/8/8/8/k7/4K3 w - - 0 1 moves e7e8n');
+  const knightEcho = lines.filter((l) => l.startsWith('info string position set')).pop();
+  assert(knightEcho && knightEcho.includes('4N3'), `knight appears on e8: ${knightEcho}`);
+});
+
+test('stop before the first iteration still returns a legal move', async () => {
+  const { engine, lines } = makeEngine();
+  engine.handleLine('position startpos');
+  engine.handleLine('go infinite');
+  engine.handleLine('stop');
+  await waitForSearchEnd(engine);
+  const best = lastBestMove(lines);
+  const position = new Position().setStartPosition();
+  assert(best && position.parseMove(best) !== 0, `legal move even without a finished iteration, got ${best}`);
+});
+
+test('a stopped search never reports a move twice', async () => {
+  const { engine, lines } = makeEngine();
+  engine.handleLine('position startpos');
+  engine.handleLine('go infinite');
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  engine.handleLine('stop');
+  engine.handleLine('stop');
+  await waitForSearchEnd(engine);
+  assertEqual(lines.filter((l) => l.startsWith('bestmove')).length, 1, 'exactly one bestmove');
+});
+
+test('go nodes stops at the node limit', async () => {
+  const { engine, lines } = makeEngine();
+  engine.handleLine('position startpos');
+  engine.handleLine('go nodes 2000');
+  await waitForSearchEnd(engine);
+  const lastInfo = lines.filter((l) => l.startsWith('info depth')).pop();
+  const nodes = Number((lastInfo ?? '').match(/nodes (\d+)/)?.[1] ?? NaN);
+  assert(Number.isFinite(nodes) && nodes <= 4000, `stopped near the node limit (${nodes} nodes)`);
+  assert(lastBestMove(lines) !== null, 'bestmove emitted');
+});
+
+test('ponderhit turns a ponder search into a normal answer', async () => {
+  const { engine, lines } = makeEngine();
+  engine.handleLine('position startpos moves e2e4');
+  engine.handleLine('go ponder wtime 5000 btime 5000');
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assertEqual(lines.filter((l) => l.startsWith('bestmove')).length, 0, 'no move while pondering');
+  engine.handleLine('ponderhit');
+  await waitForSearchEnd(engine);
+  const best = lastBestMove(lines);
+  const position = new Position().setStartPosition();
+  position.makeMove(position.parseMove('e2e4'));
+  assert(best && position.parseMove(best) !== 0, `legal reply after ponderhit, got ${best}`);
+  assertEqual(lines.filter((l) => l.startsWith('bestmove')).length, 1, 'exactly one bestmove');
 });
