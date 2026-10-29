@@ -26,12 +26,17 @@ export const ORDER_VALUE = [0, 100, 320, 330, 500, 950, 0];
 
 const TT_SCORE = 1 << 30;
 const CAPTURE_BASE = 1 << 24;
+const COUNTER_MOVE = 1 << 23;
 const KILLER_1 = 1 << 22;
 const KILLER_2 = 1 << 21;
 const HISTORY_MAX = (1 << 20) - 1;
 
-/** Fill ``list.scores`` for the given search state. */
-export function scoreMoves(list, ttMove, side, ply, killer1, killer2, history) {
+/**
+ * Fill ``list.scores`` for the given search state.
+ * ``countermove`` (optional) is the reply that refuted the previous move
+ * elsewhere in the tree - a cheap and very effective quiet-move hint.
+ */
+export function scoreMoves(list, ttMove, side, ply, killer1, killer2, history, countermove = 0) {
   const historyBase = side * 4096;
   for (let i = 0; i < list.count; i++) {
     const move = list.moves[i];
@@ -46,6 +51,8 @@ export function scoreMoves(list, ttMove, side, ply, killer1, killer2, history) {
     } else if (isPromotion(move)) {
       // Quiet queen promotion is nearly as good as a capture.
       score = CAPTURE_BASE + ORDER_VALUE[promotionType(move)] * 16;
+    } else if (countermove !== 0 && move === countermove) {
+      score = COUNTER_MOVE;
     } else if (move === killer1[ply]) {
       score = KILLER_1;
     } else if (move === killer2[ply]) {

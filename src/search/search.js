@@ -32,6 +32,7 @@ import { MoveList, isCapture, isPromotion } from '../core/moves.js';
 import { scoreMoves, pickNext } from './moveOrdering.js';
 import { WHITE, WHITE as WHITE_COLOUR } from '../core/types.js';
 import { verifyNode } from '../core/verify.js';
+import { see } from '../eval/see.js';
 
 export const MAX_PLY = 128;
 export const MATE = 30000;
@@ -72,12 +73,32 @@ export class Searcher {
     this.tt = new TranspositionTable(options.hashMB ?? 16);
     this.verifyMoves = Boolean(options.verifyMoves);
     this.moveOverhead = options.moveOverhead ?? 30;
+    // Heuristics can be switched off for A/B testing (see docs/STRENGTH.md).
+    // Measured with tools/see-ab (see docs/STRENGTH.md): SEE pruning in the
+    // quiescence search wins, SEE pruning of captures in the main search loses,
+    // so it is available but disabled by default.
+    this.seeQuiescence = options.seeQuiescence ?? true;
+    this.seePruning = options.seePruning ?? false;
 
     this.killer1 = new Int32Array(MAX_PLY);
     this.killer2 = new Int32Array(MAX_PLY);
     this.history = new Int32Array(2 * 4096);
+    /** counterMoves[side * 4096 + previous move index] = good reply. */
+    this.counterMoves = new Int32Array(2 * 4096);
+    /** The move played at each ply of the current line. */
+    this.moveStack = new Int32Array(MAX_PLY + 2);
+    /** History bonus ceiling used by the gravity update. */
+    this.historyMax = 1 << 15;
     this.moveLists = [];
     for (let i = 0; i < MAX_PLY + 2; i++) this.moveLists.push(new MoveList(256));
+
+    // Late move reduction table: LMR_TABLE[depth][moveNumber].
+    this.lmrTable = new Int32Array(MAX_PLY * 64);
+    for (let d = 1; d < MAX_PLY; d++) {
+      for (let m = 1; m < 64; m++) {
+        this.lmrTable[d * 64 + m] = Math.max(0, Math.floor(0.75 + Math.log(d) * Math.log(m) / 2.25));
+      }
+    }
 
     this.pvTable = new Int32Array(MAX_PLY * MAX_PLY);
     this.pvLength = new Int32Array(MAX_PLY + 1);
@@ -124,6 +145,7 @@ export class Searcher {
     this.killer1.fill(0);
     this.killer2.fill(0);
     this.history.fill(0);
+    this.counterMoves.fill(0);
   }
 
   /** Create a session for ``position`` without running it. */
@@ -236,6 +258,7 @@ export class Searcher {
     if (ply >= MAX_PLY - 2) return evaluate(position);
 
     const us = position.side;
+    const them = us ^ 1;
     const inCheck = position.isKingInCheck(us);
 
     // --- draw detection ----------------------------------------------------
@@ -269,16 +292,22 @@ export class Searcher {
     // --- check extension ---------------------------------------------------
     if (inCheck) depth++;
 
-    const staticEval = inCheck ? -INFINITE : evaluate(position);
+    // The static evaluation is only needed for the pruning decisions below, so
+    // it is computed on demand instead of at every node.
+    let staticEval = -INFINITE;
+    const getStaticEval = () => {
+      if (staticEval === -INFINITE) staticEval = evaluate(position);
+      return staticEval;
+    };
 
     // --- reverse futility (static null move) pruning -----------------------
     if (!isPV && !inCheck && depth <= 4 && Math.abs(beta) < MATE_THRESHOLD
-      && staticEval - 90 * depth >= beta) {
+      && getStaticEval() - 90 * depth >= beta) {
       return staticEval;
     }
 
     // --- null move pruning -------------------------------------------------
-    if (canNull && !isPV && !inCheck && depth >= 3 && staticEval >= beta
+    if (canNull && !isPV && !inCheck && depth >= 3 && getStaticEval() >= beta
       && Math.abs(beta) < MATE_THRESHOLD
       && position.hasNonPawnMaterial(us)) {
       const reduction = depth > 6 ? 3 : 2;
@@ -297,12 +326,20 @@ export class Searcher {
     list.clear();
     position.generateMoves(list);
     if (this.verifyMoves) verifyNode(position, list);
-    scoreMoves(list, ttMove, us, ply, this.killer1, this.killer2, this.history);
+
+    // Countermove: the quiet move that refuted the opponent's previous move.
+    const previousMove = ply > 0 ? this.moveStack[ply - 1] : 0;
+    const counterMove = previousMove !== 0
+      ? this.counterMoves[us * 4096 + ((previousMove & 63) << 6) + ((previousMove >>> 6) & 63)]
+      : 0;
+    scoreMoves(list, ttMove, us, ply, this.killer1, this.killer2, this.history, counterMove);
 
     let bestScore = -INFINITE;
     let bestMove = 0;
     let legalMoves = 0;
     const originalAlpha = alpha;
+    // Pruning is only allowed once a move has been searched at this node.
+    const canPrune = !isPV && !inCheck && Math.abs(beta) < MATE_THRESHOLD;
 
     for (let i = 0; i < list.count; i++) {
       const move = pickNext(list, i);
@@ -315,17 +352,49 @@ export class Searcher {
       }
       legalMoves++;
 
+      if (legalMoves > 1 && canPrune) {
+        // Static exchange pruning (off by default, see the constructor): a
+        // capture that loses material outright is not worth searching.
+        if (this.seePruning && !isPromotion(move) && isCapture(move)
+          && depth <= 4 && see(position, move) < -90 * depth) {
+          position.unmakeMove(move);
+          continue;
+        }
+
+        if (quiet) {
+          const givesCheck = position.isKingInCheck(them);
+
+          // Futility pruning: a quiet move that cannot lift the static score to
+          // alpha at depth 1-2 is hopeless unless it gives check.
+          if (depth <= 2 && !givesCheck && getStaticEval() + 140 * depth <= alpha) {
+            position.unmakeMove(move);
+            continue;
+          }
+
+          // Late move pruning: with many better moves available, the last quiet
+          // moves at very shallow depth are not worth searching.
+          if (depth <= 3 && !givesCheck && legalMoves > 14 + (depth * 6)) {
+            position.unmakeMove(move);
+            continue;
+          }
+        }
+      }
+
+      this.moveStack[ply] = move;
+
       let score;
       if (legalMoves === 1) {
         score = -this.negamax(position, depth - 1, -beta, -alpha, ply + 1, true);
       } else {
-        // Late move reductions for quiet moves that appear late in the list.
-        // A reduced search that beats alpha is re-searched at full depth.
+        // Late move reductions: quiet moves late in the list are searched with
+        // a shallower depth.  Anything that still beats alpha is re-searched at
+        // full depth, so a reduction can only cost accuracy in positions that
+        // are already worse for the mover.
         let reduction = 0;
         if (quiet && depth >= 3 && legalMoves > 3 && !inCheck) {
-          reduction = 1;
-          if (legalMoves > 6 && depth >= 5) reduction = 2;
+          reduction = this.lmrTable[depth * 64 + Math.min(63, legalMoves)];
           if (isPV) reduction = Math.max(0, reduction - 1);
+          reduction = Math.min(reduction, depth - 2);
         }
         score = -this.negamax(position, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1, true);
         if (reduction > 0 && score > alpha) {
@@ -364,9 +433,16 @@ export class Searcher {
             this.killer1[ply] = move;
           }
           const idx = (us * 4096) + ((move & 63) << 6) + ((move >>> 6) & 63);
-          this.history[idx] += depth * depth;
-          if (this.history[idx] > 1 << 20) {
-            for (let j = 0; j < this.history.length; j++) this.history[j] >>= 1;
+          // History gravity: small updates move the entry, and the values stay
+          // bounded without ever needing a full rescale.
+          const bonus = Math.min(1600, depth * 32 + 64);
+          this.history[idx] += bonus - Math.round((this.history[idx] * bonus) / this.historyMax);
+          if (this.history[idx] < 0) this.history[idx] = 0;
+          // Countermove: remember this quiet move as a good answer to the
+          // opponent's previous move.
+          if (previousMove !== 0) {
+            const cmIdx = us * 4096 + ((previousMove & 63) << 6) + ((previousMove >>> 6) & 63);
+            this.counterMoves[cmIdx] = move;
           }
         }
         break;
@@ -425,11 +501,16 @@ export class Searcher {
     for (let i = 0; i < list.count; i++) {
       const move = pickNext(list, i);
 
-      // Delta pruning: if winning the captured material cannot lift the score
-      // to alpha, the move cannot matter. Promotions are always searched.
-      if (!inCheck && !isPromotion(move)) {
-        const victimValue = CAPTURE_VALUES[(move >>> 21) & 7];
-        if (bestScore + victimValue + 200 < alpha) continue;
+      if (!inCheck) {
+        // Delta pruning: if winning the captured material cannot lift the score
+        // to alpha, the move cannot matter. Promotions are always searched.
+        if (!isPromotion(move)) {
+          const victimValue = CAPTURE_VALUES[(move >>> 21) & 7];
+          if (bestScore + victimValue + 200 < alpha) continue;
+        }
+        // Static exchange pruning: a capture that loses material even when it
+        // wins the first piece is almost never worth searching.
+        if (this.seeQuiescence && !isPromotion(move) && see(position, move) < 0) continue;
       }
 
       position.makeMove(move);

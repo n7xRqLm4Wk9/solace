@@ -21,9 +21,10 @@ export const BENCH_POSITIONS = [
   { name: 'position-5', fen: 'rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8' },
   { name: 'position-6', fen: 'r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10' },
   { name: 'italian-middlegame', fen: 'r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2NP1N2/PPP2PPP/R1BQK2R w KQkq - 0 6' },
-  { name: 'rook-endgame', fen: '6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1' },
+  // Lucena position: White is winning, so the score must be clearly positive.
+  { name: 'lucena-endgame', fen: '1K1k4/1P6/8/8/8/8/r7/2R5 w - - 0 1' },
   { name: 'queen-endgame', fen: '8/8/4k3/8/4K3/8/6Q1/8 w - - 0 1' },
-  { name: 'mate-in-2', fen: 'r5rk/5p1p/5R2/4B3/8/8/7P/7K w - - 0 1' },
+  { name: 'mate-in-3', fen: 'r5rk/5p1p/5R2/4B3/8/8/7P/7K w - - 0 1' },
   { name: 'promotion-race', fen: '8/P6k/8/8/8/8/6p1/K7 w - - 0 1' },
   { name: 'tactics-1', fen: 'r1b1k2r/ppq2ppp/2n2n2/2b1p3/2B1P3/2NP1N2/PPP2PPP/R1BQ1RK1 w kq - 0 8' },
 ];
