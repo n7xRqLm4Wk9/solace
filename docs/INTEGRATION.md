@@ -79,7 +79,7 @@ covered by new tests.
 
 | command | status | notes |
 | --- | --- | --- |
-| `uci` | ✅ | `id name SOLACE 1.0.0`, `id author`, 4 `option` lines, `uciok` |
+| `uci` | ✅ | `id name SOLACE 0.1.5`, `id author`, 4 `option` lines, `uciok` |
 | `isready` | ✅ | `readyok` immediately (search is single-threaded and interruptible) |
 | `ucinewgame` | ✅ | clears hash + killer/history/countermove tables, cancels a running search, resets to the start position |
 | `position startpos [moves ...]` | ✅ | |
@@ -253,7 +253,7 @@ Not tested / not possible to test here:
 desktop/web-server app): nothing needs to change in SOLACE. Register:
 
 ```
-name:     SOLACE 1.0.0
+name:     SOLACE 0.1.5
 command:  node /absolute/path/to/solace/cli.js
 protocol: UCI
 options:  Hash (16), Move Overhead (30), VerifyMoves (false), Clear Hash

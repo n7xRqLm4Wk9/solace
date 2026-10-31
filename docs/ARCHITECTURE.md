@@ -94,20 +94,27 @@ endgame value using a standard phase counter (24 = full material):
 | term | notes |
 | --- | --- |
 | material | separate mg/eg values (pawns gain value in the endgame) |
-| piece-square tables | pre-mirrored for Black, no per-square branches |
+| piece-square tables | pre-mirrored for Black, folded together with the material value into one flat `Int32Array` per colour, so a piece costs two loads |
 | mobility | per piece type, counts squares not occupied by own pieces |
 | bishop pair | +30 mg / +45 eg |
 | pawns | doubled, isolated, supported, phalanx, passed (rank scaled) |
-| passed pawn escort | king distance term in the endgame |
+| passed pawns | rank bonus, king support in the endgame, blocked and connected bonuses, rook behind the passer |
 | rooks | open/semi-open files, seventh rank |
-| king safety | pawn shield, open files near the king, enemy pressure on the king ring (mg only) |
+| threats | pawn attacking a piece, minor attacking a rook or queen, rook attacking a queen |
+| knights | outposts (pawn-defended, no enemy pawn can chase them away) |
+| bishops | penalty for bishops boxed in by their own pawns |
+| king safety | pawn shield, open files near the king, enemy pressure on the king ring, queen close to the enemy king (mg only) |
 | king activity | endgame king piece-square table |
 | tempo | +8 for the side to move |
 
-The evaluator allocates nothing, computes each attack set once (mobility and king
-pressure share it) and runs at roughly one million evaluations per second in
-Node on the test machine. Its colour symmetry is verified by a test that mirrors
-positions and requires the score to flip sign exactly.
+The evaluator allocates nothing and runs a single pass over the pieces of both
+colours. Each attack set is computed once and shared between mobility and king
+pressure. Per-colour square tables are stored as flat typed arrays indexed with
+`colour * 64 + square`, and the only nested lookups left are per colour rather
+than per square. It evaluates ~0.67 million positions per second in Node on the
+test machine (the previous, smaller evaluator: ~0.9 million). Its colour symmetry
+is verified by a script that mirrors positions and requires the score to flip
+sign exactly.
 
 ## Search
 

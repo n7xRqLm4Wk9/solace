@@ -1,6 +1,6 @@
 {
   "name": "solace-chess-engine",
-  "version": "1.0.0",
+  "version": "0.1.5",
   "description": "SOLACE - an independent chess engine written in plain JavaScript (UCI, browser UI, tests and benchmarks)",
   "type": "module",
   "license": "MIT",
@@ -17,6 +17,7 @@
     "bench": "node cli.js bench 6",
     "selfplay": "node cli.js selfplay",
     "match": "node cli.js match",
+    "ab": "node tools/ab-match.mjs",
     "web": "node tools/serve.js"
   }
 }

@@ -37,7 +37,7 @@ import { perft, perftDivide } from '../search/perft.js';
 import { runBenchmark, BENCH_POSITIONS } from '../tools/bench.js';
 
 export const ENGINE_NAME = 'SOLACE';
-export const ENGINE_VERSION = '1.0.0';
+export const ENGINE_VERSION = '0.1.5';
 export const ENGINE_AUTHOR = 'SOLACE project';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';

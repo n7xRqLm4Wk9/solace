@@ -8,7 +8,7 @@ network and no npm dependencies.
 * 160 automated tests, all passing (`node tests/run.js`, ~8 s).
 * Full UCI: verified over a real child process, not just in-process.
 * Exact perft results up to depth 5 on six standard positions.
-* ~0.45 M nodes/second search, ~6-7 M nodes/second perft on a laptop.
+* ~0.35-0.45 M nodes/second search and ~6-7 M nodes/second perft, measured on a laptop.
 * Plays from the command line, over UCI (any GUI), in the browser or on Android.
 
 ---
@@ -191,22 +191,23 @@ Speed: 4,865,609 nodes in 827 ms (5.9 M nps) for the initial position at depth 5
 
 | position | depth | nodes | ms | nps | score | best move | legal |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| startpos | 6 | 19,447 | 294 | 66,146 | +8 | b1c3 | yes |
-| kiwipete | 6 | 74,570 | 261 | 285,709 | +3 | d5e6 | yes |
-| position-3 | 6 | 7,924 | 23 | 344,522 | +74 | b4f4 | yes |
-| position-4 | 6 | 6,882 | 21 | 327,714 | -407 | c4c5 | yes |
-| position-5 | 6 | 6,248 | 24 | 260,333 | +511 | d7c8r | yes |
-| position-6 | 6 | 17,477 | 80 | 218,463 | +63 | g5f6 | yes |
-| italian-middlegame | 6 | 49,075 | 116 | 423,060 | +40 | c4b5 | yes |
-| lucena-endgame | 6 | 3,456 | 6 | 576,000 | +301 | c1c8 | yes |
-| queen-endgame | 6 | 25,482 | 30 | 849,400 | +1088 | g2g6 | yes |
-| mate-in-3 | 3 | 443 | 1 | 443,000 | M3 | f6a6 | yes |
-| promotion-race | 6 | 3,032 | 4 | 758,000 | -38 | a7a8q | yes |
-| tactics-1 | 6 | 25,574 | 62 | 412,484 | +282 | c1g5 | yes |
-| **total** | | **239,610** | **922** | **259,881** | | | **0 illegal** |
+| startpos | 6 | 17,378 | 271 | 64,125 | +8 | e2e3 | yes |
+| kiwipete | 6 | 128,799 | 464 | 277,584 | -36 | d5e6 | yes |
+| position-3 | 6 | 3,597 | 9 | 399,667 | +116 | b4f4 | yes |
+| position-4 | 6 | 8,054 | 33 | 244,061 | -361 | c4c5 | yes |
+| position-5 | 6 | 8,392 | 29 | 289,379 | +400 | d7c8q | yes |
+| position-6 | 6 | 12,554 | 45 | 278,978 | +93 | c3d5 | yes |
+| italian-middlegame | 6 | 28,892 | 90 | 321,022 | +53 | c3d5 | yes |
+| lucena-endgame | 6 | 3,120 | 8 | 390,000 | +309 | c1d1 | yes |
+| queen-endgame | 6 | 41,223 | 53 | 777,792 | +1117 | g2g6 | yes |
+| mate-in-3 | 3 | 500 | 1 | 500,000 | M3 | f6a6 | yes |
+| promotion-race | 6 | 3,686 | 5 | 737,200 | -94 | a7a8q | yes |
+| tactics-1 | 6 | 19,644 | 61 | 322,033 | +286 | c1g5 | yes |
+| **total** | | **275,839** | **1,069** | **258,035** | | | **0 illegal** |
 
-The per-position nps numbers include JIT warm-up; a sustained search on a
-middlegame position runs at roughly 450,000 nodes/second.
+The node count depends on the evaluation through the pruning decisions, so the
+counts changed with the richer 0.1.5 evaluation; they are deterministic for a
+given build.
 
 ### Effect of the last optimisation round
 
