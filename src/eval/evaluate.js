@@ -362,12 +362,30 @@ const SHIELD_LO_F = new Int32Array(128);
 const SHIELD_HI_F = new Int32Array(128);
 const PHALANX_LO = new Int32Array(64);
 const PHALANX_HI = new Int32Array(64);
+/** Chebyshev distance between two squares, indexed king * 64 + square. */
+const DIST = new Int8Array(64 * 64);
+/** Square colour: 0 = dark, 1 = light. */
+const SQUARE_IS_LIGHT = new Uint8Array(64);
+for (let a = 0; a < 64; a++) {
+  SQUARE_IS_LIGHT[a] = ((a & 7) + (a >> 3)) & 1;
+  for (let b = 0; b < 64; b++) {
+    const df = Math.abs((a & 7) - (b & 7));
+    const dr = Math.abs((a >> 3) - (b >> 3));
+    DIST[(a << 6) | b] = df > dr ? df : dr;
+  }
+}
+/** Passed-pawn rank bonus per colour and square. */
+const PASSED_MG_F = new Int32Array(128);
+const PASSED_EG_F = new Int32Array(128);
 for (let sq = 0; sq < 64; sq++) {
   PHALANX_LO[sq] = ADJACENT_FILES_LO[sq] & RANK_BB_LO[sq >> 3];
   PHALANX_HI[sq] = ADJACENT_FILES_HI[sq] & RANK_BB_HI[sq >> 3];
 }
 for (let c = 0; c < 2; c++) {
   for (let sq = 0; sq < 64; sq++) {
+    const relRank = c === WHITE ? (sq >> 3) : 7 - (sq >> 3);
+    PASSED_MG_F[(c << 6) + sq] = WEIGHTS.passedMg[relRank];
+    PASSED_EG_F[(c << 6) + sq] = WEIGHTS.passedEg[relRank];
     PAWN_ATK_LO_F[(c << 6) + sq] = PAWN_ATK_LO[c][sq];
     PAWN_ATK_HI_F[(c << 6) + sq] = PAWN_ATK_HI[c][sq];
     PASSED_LO_F[(c << 6) + sq] = PASSED_MASK_LO[c][sq];
@@ -519,9 +537,15 @@ function evaluateBothSides(position) {
     let pawnThreatHi = 0;
 
     // ---- one pass over the pieces ----------------------------------------
+    // Values shared by every piece of a type.
+    const notOwnLo = ~ownColourLo;
+    const notOwnHi = ~ownColourHi;
     for (let type = PAWN; type <= KING; type++) {
       const idx = colour * 6 + (type - 1);
       const weight = weights[type];
+      const useRing = weight !== 0 && !ringIsEmpty;
+      const mobMg = WEIGHTS.mobilityMg[type];
+      const mobEg = WEIGHTS.mobilityEg[type];
       const pstBase = type * 64;
       for (let word = 0; word < 2; word++) {
         let bits = word === 0 ? position.piecesLo[idx] : position.piecesHi[idx];
@@ -538,9 +562,9 @@ function evaluateBothSides(position) {
             const pHitsHi = PAWN_ATK_HI_F[cBase + sq];
             pawnThreatLo |= pHitsLo;
             pawnThreatHi |= pHitsHi;
-            if (((fileOf(sq) + rankOf(sq)) & 1) === 0) pawnsOnDark++;
-            else pawnsOnLight++;
-            if (weight !== 0 && !ringIsEmpty) {
+            if (SQUARE_IS_LIGHT[sq] === 1) pawnsOnLight++;
+            else pawnsOnDark++;
+            if (useRing) {
               danger += (popcount(pHitsLo & enemyRingLo) + popcount(pHitsHi & enemyRingHi)) * weight;
             }
             continue;
@@ -553,11 +577,11 @@ function evaluateBothSides(position) {
           else queenAttacks(sq, occLo, occHi);
 
           // Mobility: attacked squares not occupied by our own pieces.
-          const mobility = popcount(ATK_LO & ~ownColourLo) + popcount(ATK_HI & ~ownColourHi);
-          mg += mobility * WEIGHTS.mobilityMg[type];
-          eg += mobility * WEIGHTS.mobilityEg[type];
+          const mobility = popcount(ATK_LO & notOwnLo) + popcount(ATK_HI & notOwnHi);
+          mg += mobility * mobMg;
+          eg += mobility * mobEg;
 
-          if (weight !== 0 && !ringIsEmpty) {
+          if (useRing) {
             danger += (popcount(ATK_LO & enemyRingLo) + popcount(ATK_HI & enemyRingHi)) * weight;
           }
 
@@ -612,7 +636,7 @@ function evaluateBothSides(position) {
               eg += WEIGHTS.rookSeventhEg;
             }
           } else if (type === QUEEN && enemyKingSq >= 0
-            && distance(sq, enemyKingSq) <= 2) {
+            && DIST[(sq << 6) | enemyKingSq] <= 2) {
             // A queen close to the enemy king adds to the attack on it.
             danger += WEIGHTS.kingQueenNearMg;
           }
@@ -650,8 +674,15 @@ function evaluateBothSides(position) {
     const enemyPawnLo = enemyPawnLoAll;
     const enemyPawnHi = enemyPawnHiAll;
 
-    for (let f = 0; f < 8; f++) {
-      fileCounts[f] = popcount(ownPawnLo & FILE_BB_LO[f]) + popcount(ownPawnHi & FILE_BB_HI[f]);
+    for (let f = 0; f < 8; f++) fileCounts[f] = 0;
+    for (let word = 0; word < 2; word++) {
+      let bits = word === 0 ? ownPawnLo : ownPawnHi;
+      const base = word === 0 ? 0 : 32;
+      while (bits !== 0) {
+        const sq = base + 31 - Math.clz32(bits & -bits);
+        bits &= bits - 1;
+        fileCounts[sq & 7]++;
+      }
     }
 
     for (let word = 0; word < 2; word++) {
@@ -661,8 +692,6 @@ function evaluateBothSides(position) {
         const sq = base + 31 - Math.clz32(bits & -bits);
         bits &= bits - 1;
         const f = fileOf(sq);
-        const r = rankOf(sq);
-        const relRank = colour === WHITE ? r : 7 - r;
 
         if (fileCounts[f] > 1) {
           mg += WEIGHTS.doubledMg;
@@ -689,11 +718,12 @@ function evaluateBothSides(position) {
 
         // Passed pawn
         if (((PASSED_LO_F[cBase + sq] & enemyPawnLo) | (PASSED_HI_F[cBase + sq] & enemyPawnHi)) === 0) {
-          mg += WEIGHTS.passedMg[relRank];
-          eg += WEIGHTS.passedEg[relRank];
+          mg += PASSED_MG_F[cBase + sq];
+          eg += PASSED_EG_F[cBase + sq];
 
           if (ownKingSq >= 0 && enemyKingSq >= 0) {
-            eg += WEIGHTS.passedKingSupportEg * (distance(enemyKingSq, sq) - distance(ownKingSq, sq));
+            eg += WEIGHTS.passedKingSupportEg
+              * (DIST[(enemyKingSq << 6) | sq] - DIST[(ownKingSq << 6) | sq]);
           }
 
           // A blocked passer is worth much less.

@@ -482,6 +482,24 @@ export class Searcher {
 
     if (isImmediateDraw(position)) return DRAW;
 
+    // A transposition-table bound from a previous search of this position is
+    // valid here too; quiescence trees are full of transpositions.
+    let ttMove = 0;
+    if (this.tt.probe(position.keyLo, position.keyHi)) {
+      const ttScore = this.tt.entryScore;
+      const flag = this.tt.entryFlag;
+      ttMove = this.tt.entryMove;
+      // Mate scores are ply-relative and are not adjusted here, so they are
+      // never used as a quiescence cutoff.
+      if (Math.abs(ttScore) < MATE_THRESHOLD
+        && (flag === TT_EXACT
+          || (flag === TT_LOWER && ttScore >= beta)
+          || (flag === TT_UPPER && ttScore <= alpha))) {
+        return ttScore;
+      }
+    }
+
+    const alphaOrig = alpha;
     let bestScore;
     if (!inCheck) {
       const standPat = evaluate(position);
@@ -497,7 +515,7 @@ export class Searcher {
     // In check every move must be tried, otherwise only noisy moves.
     position.generateMoves(list, !inCheck);
     if (this.verifyMoves) verifyNode(position, list);
-    scoreMoves(list, 0, us, ply, this.killer1, this.killer2, this.history);
+    scoreMoves(list, ttMove, us, ply, this.killer1, this.killer2, this.history);
 
     let legalMoves = 0;
     for (let i = 0; i < list.count; i++) {
@@ -532,6 +550,13 @@ export class Searcher {
     }
 
     if (inCheck && legalMoves === 0) return -MATE + ply;
+    // Depth 0 entries never replace a deeper entry, but they do catch
+    // transpositions between capture lines.
+    if (Math.abs(bestScore) < MATE_THRESHOLD) {
+      const flag = bestScore >= beta ? TT_LOWER
+        : (bestScore <= alphaOrig ? TT_UPPER : TT_EXACT);
+      this.tt.store(position.keyLo, position.keyHi, 0, bestScore, 0, flag);
+    }
     return bestScore;
   }
 }

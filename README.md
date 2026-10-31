@@ -191,22 +191,22 @@ Speed: 4,865,609 nodes in 827 ms (5.9 M nps) for the initial position at depth 5
 
 | position | depth | nodes | ms | nps | score | best move | legal |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| startpos | 6 | 17,378 | 271 | 64,125 | +8 | e2e3 | yes |
-| kiwipete | 6 | 128,799 | 464 | 277,584 | -36 | d5e6 | yes |
-| position-3 | 6 | 3,597 | 9 | 399,667 | +116 | b4f4 | yes |
-| position-4 | 6 | 8,054 | 33 | 244,061 | -361 | c4c5 | yes |
-| position-5 | 6 | 8,392 | 29 | 289,379 | +400 | d7c8q | yes |
-| position-6 | 6 | 12,554 | 45 | 278,978 | +93 | c3d5 | yes |
-| italian-middlegame | 6 | 28,892 | 90 | 321,022 | +53 | c3d5 | yes |
-| lucena-endgame | 6 | 3,120 | 8 | 390,000 | +309 | c1d1 | yes |
-| queen-endgame | 6 | 41,223 | 53 | 777,792 | +1117 | g2g6 | yes |
-| mate-in-3 | 3 | 500 | 1 | 500,000 | M3 | f6a6 | yes |
-| promotion-race | 6 | 3,686 | 5 | 737,200 | -94 | a7a8q | yes |
-| tactics-1 | 6 | 19,644 | 61 | 322,033 | +286 | c1g5 | yes |
-| **total** | | **275,839** | **1,069** | **258,035** | | | **0 illegal** |
+| startpos | 6 | 15,584 | 221 | 70,516 | +10 | e2e4 | yes |
+| kiwipete | 6 | 74,580 | 269 | 277,249 | -36 | d5e6 | yes |
+| position-3 | 6 | 3,394 | 7 | 484,857 | +116 | b4f4 | yes |
+| position-4 | 6 | 6,194 | 18 | 344,111 | -361 | c4c5 | yes |
+| position-5 | 6 | 7,356 | 19 | 387,158 | +400 | d7c8q | yes |
+| position-6 | 6 | 12,536 | 37 | 338,811 | +93 | c3d5 | yes |
+| italian-middlegame | 6 | 28,504 | 83 | 343,422 | +53 | c3d5 | yes |
+| lucena-endgame | 6 | 2,922 | 7 | 417,429 | +309 | c1d1 | yes |
+| queen-endgame | 6 | 31,141 | 43 | 724,209 | +1121 | g2g6 | yes |
+| mate-in-3 | 3 | 539 | 2 | 269,500 | M3 | f6a6 | yes |
+| promotion-race | 6 | 2,873 | 3 | 957,667 | -94 | a7a8q | yes |
+| tactics-1 | 6 | 18,797 | 50 | 375,940 | +286 | c1g5 | yes |
+| **total** | | **204,420** | **759** | **269,328** | | | **0 illegal** |
 
-The node count depends on the evaluation through the pruning decisions, so the
-counts changed with the richer 0.1.5 evaluation; they are deterministic for a
+The node count depends on the evaluation and on the pruning decisions it drives,
+so these counts changed with the 0.1.5 evaluation; they are deterministic for a
 given build.
 
 ### Effect of the last optimisation round
@@ -239,10 +239,26 @@ the 95% confidence interval is wide (about +15 to +220 Elo), so the honest claim
 is "clearly stronger than the previous build", not a rating. Games ended by
 checkmate (19), threefold repetition (8) and once each by stalemate, the
 fifty-move rule and the move limit - a useful sanity check that whole-game
-handling works. **No Elo rating is claimed for SOLACE**: no match against a
-rated reference engine has been run yet (see
-[docs/STRENGTH.md](docs/STRENGTH.md) for the exact command to do it with
-Stockfish, and why it is not part of this report).
+handling works.
+
+For 0.1.5 the evidence is thinner and is reported as such: against 0.1.4 it
+scores 53.0% over **600 games** at 70 ms per move, which is **+21 Elo with a 95%
+interval of about -7 to +49** - a small, probably real, but not individually
+significant gain. The same build is 23 Elo *worse* at fixed depth, because the
+richer evaluation costs time; the quiescence search table pays that time back.
+[docs/STRENGTH.md](docs/STRENGTH.md) has every match, the sample sizes behind
+these numbers and the two experiments that measured well and were rejected.
+
+**No Elo rating is claimed for SOLACE**: no match against a rated reference
+engine has been run yet (see [docs/STRENGTH.md](docs/STRENGTH.md) for the exact
+command to do it with Stockfish, and why it is not part of this report).
+
+Matches between two builds use `tools/ab-match.mjs`, which plays both trees in one
+process with the same openings, alternating colours and rules-only adjudication:
+
+```sh
+node tools/ab-match.mjs . /path/to/previous-build 200 movetime:100
+```
 
 Self-play (`node cli.js selfplay --games 4 --depth 5`) completes every game with
 a real termination (checkmate, repetition or fifty-move rule), 0 illegal moves,
