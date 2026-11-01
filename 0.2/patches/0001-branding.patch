@@ -1,0 +1,205 @@
+--- a/src/misc.cpp
++++ b/src/misc.cpp
+@@ -54,7 +54,7 @@
+ namespace {
+ 
+ // Version number or dev.
+-constexpr std::string_view version = "19";
++constexpr std::string_view version = "Solace 0.2";
+ 
+ // Our fancy logging facility. The trick here is to replace cin.rdbuf() and
+ // cout.rdbuf() with two Tie objects that tie cin and cout to a file stream. We
+--- a/src/uci.h
++++ b/src/uci.h
+@@ -42,6 +42,7 @@
+     UCIEngine(CommandLine cli);
+ 
+     void loop();
++    bool command(const std::string& cmdLine);
+ 
+     static int         to_cp(Value v, const Position& pos);
+     static std::string format_score(const Score& s);
+--- a/src/uci.cpp
++++ b/src/uci.cpp
+@@ -93,7 +93,7 @@
+ 
+ void UCIEngine::loop() {
+     set_console_utf8();
+-    std::string token, cmd;
++    std::string cmd;
+ 
+     for (int i = 1; i < cli.argc; ++i)
+         cmd += std::string(cli.argv[i]) + " ";
+@@ -102,90 +102,101 @@
+     {
+         if (cli.argc == 1
+             && !getline(std::cin, cmd))  // Wait for an input or an end-of-file (EOF) indication
+-            cmd = "quit";
++            break;
+ 
+-        currentCmd = cmd;
+-        std::istringstream is(cmd);
++        if (!command(cmd))
++            break;
+ 
+-        token.clear();  // Avoid a stale if getline() returns nothing or a blank line
+-        is >> token;
++    } while (cli.argc <= 1);  // The command-line arguments are one-shot
++}
+ 
+-        if (token == "quit" || token == "stop")
+-            engine.stop();
+ 
+-        // The GUI sends 'ponderhit' to tell that the user has played the expected move.
+-        // So, 'ponderhit' is sent if pondering was done on the same move that the user
+-        // has played. The search should continue, but should also switch from pondering
+-        // to the normal search.
+-        else if (token == "ponderhit")
+-            engine.set_ponderhit(false);
++// Executes a single command line. Returns false when the engine was asked to quit.
++bool UCIEngine::command(const std::string& cmdLine) {
++    const std::string& cmd = cmdLine;
++    std::string        token;
++    currentCmd = cmd;
++    std::istringstream is(cmd);
++
++    token.clear();  // Avoid a stale if getline() returns nothing or a blank line
++    is >> token;
++
++    if (token == "quit" || token == "stop")
++        engine.stop();
++
++    // The GUI sends 'ponderhit' to tell that the user has played the expected move.
++    // So, 'ponderhit' is sent if pondering was done on the same move that the user
++    // has played. The search should continue, but should also switch from pondering
++    // to the normal search.
++    else if (token == "ponderhit")
++        engine.set_ponderhit(false);
+ 
+-        else if (token == "uci")
+-        {
+-            sync_cout << "id name " << engine_info(true) << "\n"
+-                      << engine.get_options() << sync_endl;
++    else if (token == "uci")
++    {
++        sync_cout << "id name " << engine_info(true) << "\n"
++                  << engine.get_options() << sync_endl;
+ 
+-            sync_cout << "uciok" << sync_endl;
+-        }
++        sync_cout << "uciok" << sync_endl;
++    }
+ 
+-        else if (token == "setoption")
+-            setoption(is);
+-        else if (token == "go")
+-        {
+-            // send info strings after the go command is sent for old GUIs and python-chess
+-            print_info_string(engine.numa_config_information_as_string());
+-            print_info_string(engine.thread_allocation_information_as_string());
+-            go(is);
+-        }
+-        else if (token == "position")
+-            position(is);
+-        else if (token == "ucinewgame")
+-            engine.search_clear();
+-        else if (token == "isready")
+-            sync_cout << "readyok" << sync_endl;
++    else if (token == "setoption")
++        setoption(is);
++    else if (token == "go")
++    {
++        // send info strings after the go command is sent for old GUIs and python-chess
++        print_info_string(engine.numa_config_information_as_string());
++        print_info_string(engine.thread_allocation_information_as_string());
++        go(is);
++    }
++    else if (token == "position")
++        position(is);
++    else if (token == "ucinewgame")
++        engine.search_clear();
++    else if (token == "isready")
++        sync_cout << "readyok" << sync_endl;
+ 
+-        // Add custom non-UCI commands, mainly for debugging purposes.
+-        else if (token == "flip")
++    // Add custom non-UCI commands, mainly for debugging purposes.
++    else if (token == "flip")
++    {
++        if (auto err = engine.flip())
+         {
+-            if (auto err = engine.flip())
+-            {
+-                terminate_on_critical_error(err->what());
+-            }
++            terminate_on_critical_error(err->what());
+         }
+-        else if (token == "bench")
+-            bench(is);
+-        else if (token == BenchmarkCommand)
+-            benchmark(is);
+-        else if (token == "d")
+-            sync_cout << engine.visualize() << sync_endl;
+-        else if (token == "eval")
+-            engine.trace_eval();
+-        else if (token == "compiler")
+-            sync_cout << compiler_info() << sync_endl;
+-        else if (token == "export_net")
+-        {
+-            std::optional<std::filesystem::path> file;
+-            std::string                          filename;
++    }
++    else if (token == "bench")
++        bench(is);
++    else if (token == BenchmarkCommand)
++        benchmark(is);
++    else if (token == "d")
++        sync_cout << engine.visualize() << sync_endl;
++    else if (token == "eval")
++        engine.trace_eval();
++    else if (token == "compiler")
++        sync_cout << compiler_info() << sync_endl;
++    else if (token == "export_net")
++    {
++        std::optional<std::filesystem::path> file;
++        std::string                          filename;
+ 
+-            if (is >> filename)
+-                file = path_from_utf8(filename);
++        if (is >> filename)
++            file = path_from_utf8(filename);
+ 
+-            engine.save_network(file);
+-        }
+-        else if (token == "--help" || token == "help" || token == "--license" || token == "license")
+-            sync_cout
+-              << "\nStockfish is a powerful chess engine for playing and analyzing."
+-                 "\nIt is released as free software licensed under the GNU GPLv3 License."
+-                 "\nStockfish is normally used with a graphical user interface (GUI) and implements"
+-                 "\nthe Universal Chess Interface (UCI) protocol to communicate with a GUI, an API, etc."
+-                 "\nFor any further information, visit https://github.com/official-stockfish/Stockfish#readme"
+-                 "\nor read the corresponding README.md and Copying.txt files distributed along with this program.\n"
+-              << sync_endl;
+-        else if (!token.empty() && token[0] != '#')
+-            sync_cout << "Unknown command: '" << cmd << "'. Type help for more information."
+-                      << sync_endl;
++        engine.save_network(file);
++    }
++    else if (token == "--help" || token == "help" || token == "--license" || token == "license")
++        sync_cout
++          << "\nStockfish is a powerful chess engine for playing and analyzing."
++             "\nIt is released as free software licensed under the GNU GPLv3 License."
++             "\nStockfish is normally used with a graphical user interface (GUI) and implements"
++             "\nthe Universal Chess Interface (UCI) protocol to communicate with a GUI, an API, etc."
++             "\nFor any further information, visit https://github.com/official-stockfish/Stockfish#readme"
++             "\nor read the corresponding README.md and Copying.txt files distributed along with this program.\n"
++          << sync_endl;
++    else if (!token.empty() && token[0] != '#')
++        sync_cout << "Unknown command: '" << cmd << "'. Type help for more information."
++                  << sync_endl;
+ 
+-    } while (token != "quit" && cli.argc <= 1);  // The command-line arguments are one-shot
++    return token != "quit";
+ }
+ 
+ Search::LimitsType UCIEngine::parse_limits(std::istream& is) {

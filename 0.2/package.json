@@ -1,0 +1,20 @@
+{
+  "name": "solace-wasm",
+  "version": "0.2.0",
+  "description": "Solace 0.2 - Stockfish 19 compiled to WebAssembly, speaking UCI, playable in the browser",
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "./build/build.sh",
+    "net": "node build/fetch-net.mjs",
+    "test": "node tests/run.mjs",
+    "serve": "node server.mjs",
+    "uci": "node cli.mjs"
+  },
+  "bin": {
+    "solace-wasm": "./cli.mjs"
+  }
+}

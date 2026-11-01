@@ -1,0 +1,30 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -25,6 +25,9 @@
+ #include "position.h"
+ #include "tune.h"
+ #include "uci.h"
++#ifdef SOLACE_WASM
++    #include "wasm_bridge.h"
++#endif
+ 
+ using namespace Stockfish;
+ 
+@@ -47,9 +50,17 @@
+ 
+     Tune::init(uci->engine_options());
+ 
++#ifdef SOLACE_WASM
++    // Solace WebAssembly build: commands arrive through solace_command() (see
++    // wasm_bridge.cpp) instead of stdin, so main() only initialises and returns.
++    // The engine is intentionally leaked: it lives for the whole module.
++    WasmBridge::install(uci.release());
++    return 0;
++#else
+     uci->loop();
+ 
+     return 0;
++#endif
+ }
+ 
+ #ifdef UNIVERSAL_BINARY
