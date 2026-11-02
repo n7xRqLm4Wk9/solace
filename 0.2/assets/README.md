@@ -7,7 +7,7 @@ Create it with:
 
 ```sh
 cd 0.2
-node build/fetch-net.mjs
+node scripts/fetch-net.mjs
 ```
 
 The script downloads the file published by the Stockfish project and checks it

@@ -106,14 +106,49 @@ try {
   });
 
   await check('the wasm binary is served as application/wasm', async () => {
-    const res = await fetch(`http://127.0.0.1:${PORT}/0.2/dist/solace.wasm`, { method: 'HEAD' });
-    assert.equal(res.status, 200, 'dist/solace.wasm missing — run build/build.sh');
+    const res = await fetch(`http://127.0.0.1:${PORT}/0.2/engine/solace.wasm`, { method: 'HEAD' });
+    assert.equal(res.status, 200, 'engine/solace.wasm missing — run scripts/build.sh');
     assert.equal(res.headers.get('content-type'), 'application/wasm');
     assert.ok(Number(res.headers.get('content-length')) > 100000);
   });
 } finally {
   server.kill();
 }
+
+// ---- the time-management helper -------------------------------------------
+
+await check('overhead.js turns measured lateness into a Move Overhead value', async () => {
+  const { overheadFromSamples, lateness, OverheadMeter, MIN_OVERHEAD, MAX_OVERHEAD } = await import(
+    pathToFileURL(join(ROOT, 'web', 'overhead.js')).href
+  );
+
+  // no samples yet: keep the browser-safe floor instead of Stockfish's 10 ms
+  assert.equal(overheadFromSamples([]), MIN_OVERHEAD);
+  assert.ok(MIN_OVERHEAD >= 50, 'the floor has to cover a task hop');
+
+  // 1.5x the worst recent sample, rounded
+  assert.equal(overheadFromSamples([12, 80, 40]), 120);
+  // clamped at both ends
+  assert.equal(overheadFromSamples([1000]), MAX_OVERHEAD);
+  assert.equal(overheadFromSamples([1, 2]), MIN_OVERHEAD);
+
+  // lateness is never negative and ignores nonsense input
+  assert.equal(lateness(200, 260), 60);
+  assert.equal(lateness(200, 150), 0);
+  assert.equal(lateness(NaN, 10), null);
+
+  const meter = new OverheadMeter(3);
+  assert.equal(meter.record(200, 210), MIN_OVERHEAD, 'a fast answer keeps the floor');
+  assert.equal(meter.record(200, 400), 300, 'a slow answer raises the reserve');
+  meter.markApplied();
+  assert.equal(meter.shouldUpdate(), false, 'the same value is not re-sent');
+
+  // the window is bounded, so one old outlier eventually stops counting
+  meter.record(200, 210);
+  meter.record(200, 210);
+  meter.record(200, 210);
+  assert.ok(meter.current < 300, 'old samples leave the window');
+});
 
 // ---- the worker protocol --------------------------------------------------
 
@@ -146,15 +181,19 @@ await check('src/worker.js loads the engine and answers uci / isready / go', asy
 
   send({
     type: 'init',
-    moduleUrl: pathToFileURL(join(ROOT, 'dist', 'solace.js')).href,
-    wasmUrl: pathToFileURL(join(ROOT, 'dist', 'solace.wasm')).href,
+    moduleUrl: pathToFileURL(join(ROOT, 'engine', 'solace.js')).href,
+    wasmUrl: pathToFileURL(join(ROOT, 'engine', 'solace.wasm')).href,
     netUrl: pathToFileURL(join(ROOT, 'assets', 'nn-1a298aa575a0.nnue')).href,
   });
 
   const status = await waitFor((m) => m.type === 'status' && (m.state === 'ready' || m.state === 'error'));
   assert.equal(status.state, 'ready', `engine failed to start: ${status.detail}`);
+  // The banner carries the build's architecture ("64 POPCNT" natively, nothing
+  // extra in WebAssembly), so only the name and the author credit are checked.
   assert.ok(
-    messages.some((m) => m.type === 'line' && m.line === 'Solace 0.2 64 POPCNT by the Stockfish developers'),
+    messages.some(
+      (m) => m.type === 'line' && m.line.startsWith('Solace 0.2 ') && m.line.includes(' by '),
+    ),
     'engine banner was not forwarded',
   );
 

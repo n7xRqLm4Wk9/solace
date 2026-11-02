@@ -3,7 +3,7 @@
  *
  * This is the only file that knows how the C++ side is wired up:
  *
- *   1. load dist/solace.js + dist/solace.wasm (Emscripten output),
+ *   1. load engine/solace.js + engine/solace.wasm (Emscripten output),
  *   2. write the NNUE file into the module's in-memory filesystem,
  *   3. start Stockfish's main(), which initialises the engine and returns,
  *   4. feed UCI command lines through the exported `solace_command()`.
@@ -16,8 +16,8 @@ import { NET_NAME } from './config.js';
 
 /**
  * @param {object} options
- * @param {Function} options.createModule  the factory exported by dist/solace.js
- * @param {string} [options.wasmUrl]       URL/path of dist/solace.wasm
+ * @param {Function} options.createModule  the factory exported by engine/solace.js
+ * @param {string} [options.wasmUrl]       URL/path of engine/solace.wasm
  * @param {string} [options.netUrl]        URL/path of the .nnue file
  * @param {string} [options.netFile]       path inside the virtual FS
  * @param {(line: string) => void} [options.onLine]  one UCI output line
@@ -113,6 +113,21 @@ function emitLines(chunk, onLine) {
 }
 
 async function fetchBinary(url, onProgress) {
+  // Node has no file:// support in fetch(), so a local path (the CLI and the
+  // tests pass one) is read straight from disk. Browsers never take this path.
+  if (typeof url === 'string' && url.startsWith('file:')) {
+    const { readFile } = await import('node:fs/promises');
+    const { fileURLToPath } = await import('node:url');
+    let bytes;
+    try {
+      bytes = new Uint8Array(await readFile(fileURLToPath(url)));
+    } catch (err) {
+      throw new Error(`cannot load ${url}: ${err.code || err.message}`);
+    }
+    if (onProgress) onProgress(bytes.length, bytes.length);
+    return bytes;
+  }
+
   const res = await fetch(url);
   if (!res.ok) throw new Error(`cannot load ${url}: HTTP ${res.status}`);
 

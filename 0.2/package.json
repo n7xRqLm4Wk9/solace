@@ -8,8 +8,8 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "./build/build.sh",
-    "net": "node build/fetch-net.mjs",
+    "build": "./scripts/build.sh",
+    "net": "node scripts/fetch-net.mjs",
     "test": "node tests/run.mjs",
     "serve": "node server.mjs",
     "uci": "node cli.mjs"

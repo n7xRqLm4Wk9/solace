@@ -12,14 +12,21 @@
  */
 
 import { createEngine } from '../src/engine.js';
-import { NET_NAME, ENGINE_NAME } from '../src/config.js';
+import { NET_NAME, ENGINE_NAME, engineFiles, pickVariant } from '../src/config.js';
 import { createPosition } from '../../0.1.5/src/core/position.js';
 import { MoveList, moveToUci } from '../../0.1.5/src/core/moves.js';
 import { dirname, join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
+
+// Same selection rule as cli.mjs and the page, so the tests exercise the build
+// the user actually gets.
+let VARIANT = pickVariant();
+if (!existsSync(join(ROOT, 'engine', engineFiles(VARIANT).js))) VARIANT = 'simd';
+const FILES = engineFiles(VARIANT);
 
 const tests = [];
 const only = process.argv.slice(2);
@@ -44,10 +51,18 @@ function send(cmd) {
   engine.send(cmd);
 }
 
-async function waitFor(pattern, timeoutMs = 180000) {
+/**
+ * Resolves with the first line matching `pattern`.
+ *
+ * `from` is the index in `lines` to start looking at; it defaults to "from now
+ * on". Several commands print identical lines (every search ends with a
+ * `bestmove`), so scanning the whole backlog would hand back a stale answer.
+ * Commands the engine runs synchronously answer inside `send()`, before the
+ * promise is even awaited — pass the index from before the send to catch those.
+ */
+async function waitFor(pattern, timeoutMs = 180000, from = lines.length) {
   const re = pattern instanceof RegExp ? pattern : new RegExp(pattern);
-  const current = lines;
-  for (const line of current) if (re.test(line)) return line;
+  for (let i = from; i < lines.length; i++) if (re.test(lines[i])) return lines[i];
 
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -69,6 +84,18 @@ async function command(cmd, expect) {
   const pending = waitFor(expect);
   send(cmd);
   return pending;
+}
+
+/**
+ * Sends `uci` and returns every line it produced. The engine answers
+ * synchronously inside send(), so the output has to be collected by index
+ * rather than matched as it trickles in.
+ */
+async function uciHandshake() {
+  const mark = lines.length;
+  send('uci');
+  await waitFor(/^uciok/, 180000, mark);
+  return lines.slice(mark);
 }
 
 async function bestmove(go, timeoutMs) {
@@ -95,16 +122,15 @@ const KIWIPETE = 'r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq
 // ---------------------------------------------------------------------------
 
 test('handshake: id name is Solace 0.2', async () => {
-  send('uci');
-  const id = await waitFor(/^id name /);
-  await waitFor(/^uciok/);
+  const out = await uciHandshake();
+  const id = out.find((l) => l.startsWith('id name '));
   check(id === `id name ${ENGINE_NAME}`, `unexpected id line: ${id}`);
+  const author = out.find((l) => l.startsWith('id author '));
+  check(/(Stockfish|Solace)/.test(author || ''), `missing author credit: ${author}`);
 });
 
 test('handshake: uci exposes the standard options', async () => {
-  send('uci');
-  await waitFor(/^uciok/);
-  const text = lines.join('\n');
+  const text = (await uciHandshake()).join('\n');
   for (const option of ['Threads', 'Hash', 'MultiPV', 'Skill Level', 'UCI_LimitStrength', 'UCI_Elo', 'EvalFile'])
     check(text.includes(`option name ${option} `), `missing option ${option}`);
 });
@@ -265,12 +291,12 @@ test('self-play stays legal for 16 plies', async () => {
 });
 
 test('loader rejects a missing network with a clear error', async () => {
-  const { default: createModule } = await import(pathToFileURL(join(ROOT, 'dist', 'solace.js')).href);
+  const { default: createModule } = await import(pathToFileURL(join(ROOT, 'engine', FILES.js)).href);
   let failed = false;
   try {
     await createEngine({
       createModule,
-      wasmUrl: pathToFileURL(join(ROOT, 'dist', 'solace.wasm')).href,
+      wasmUrl: pathToFileURL(join(ROOT, 'engine', FILES.wasm)).href,
       netUrl: pathToFileURL(join(ROOT, 'assets', 'does-not-exist.nnue')).href,
     });
   } catch (err) {
@@ -285,12 +311,12 @@ test('loader rejects a missing network with a clear error', async () => {
 
 const selected = only.length ? tests.filter((t) => only.some((o) => t.name.includes(o))) : tests;
 
-console.log(`Solace 0.2 — ${selected.length} tests\n`);
+console.log(`Solace 0.2 — ${selected.length} tests (${VARIANT} build)\n`);
 
-const { default: createModule } = await import(pathToFileURL(join(ROOT, 'dist', 'solace.js')).href);
+const { default: createModule } = await import(pathToFileURL(join(ROOT, 'engine', FILES.js)).href);
 engine = await createEngine({
   createModule,
-  wasmUrl: pathToFileURL(join(ROOT, 'dist', 'solace.wasm')).href,
+  wasmUrl: pathToFileURL(join(ROOT, 'engine', FILES.wasm)).href,
   netUrl: pathToFileURL(join(ROOT, 'assets', NET_NAME)).href,
   onLine: (line) => {
     lines.push(line);

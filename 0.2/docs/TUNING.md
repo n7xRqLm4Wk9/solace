@@ -1,0 +1,118 @@
+# Tuning Solace
+
+Stockfish's search constants are tuned for long time controls on desktop
+hardware (the engine's own comments say the marked values are "optimized to
+time controls of 180 + 1.8 and longer"). Solace 0.2 runs in a browser at about
+one second per move on one thread, which is a completely different regime: a
+few hundred thousand nodes per move instead of tens of millions.
+
+So Solace exposes the parameters that matter most as *scales* of the upstream
+values. 100 % always reproduces Stockfish 19 exactly, which is also the
+reference point every match is measured against.
+
+| UCI option | what it scales | 100 % = |
+|---|---|---|
+| `Solace Tuning` | preset: `Solace 0.2` (default) or `Stockfish 19` | — |
+| `Solace LMR Scale` | the late-move-reduction amount, `Worker::reduction()` | 982 and the `reductions[]` table |
+| `Solace Pruning Scale` | futility margins and SEE-based pruning thresholds | `119*lmrDepth + 90*(...) + 164`, `234 + 247*lmrDepth`, `-23*lmrDepth²`, `177*depth` |
+| `Solace History Scale` | the divisor turning history into extra LMR depth | `lmrDivisor[16]` |
+| `Solace Optimism Scale` | the time-dependent optimism added to the NNUE evaluation | `114 * avg / (|avg| + 85)` |
+
+All four are plain percentages, so `Solace Pruning Scale=110` prunes 10 % more
+aggressively than Stockfish and `=90` 10 % less. `Solace Tuning=Stockfish 19`
+resets every scale to 100.
+
+## How the preset was chosen
+
+Two engines that are identical except for one option play each other; the same
+opening set is used twice with colours swapped, and the rules (legality, mate,
+stalemate, fifty-move, threefold, insufficient material) are enforced by the
+independent board model of the 0.1.5 engine, so a broken build cannot "win" by
+playing illegal moves.
+
+```sh
+node 0.2/tools/match.mjs \
+  --engine-a ./engine-cli --engine-b ./engine-cli \
+  --a "Solace Tuning=Stockfish 19" --b "Solace Tuning=Stockfish 19,Solace LMR Scale=115" \
+  --games 300 --movetime 30 --concurrency 2
+```
+
+`--engine-a` can be any UCI binary: the native build used for tuning, the
+WebAssembly build (`node 0.2/cli.mjs`), or a released Stockfish, so the same
+script also gives an honest "how strong is this really" number.
+
+### Results
+
+<!-- filled in from the actual runs; see the numbers below -->
+
+Run in this container (2 vCPU), 16 opening lines × colours swapped, 30 ms/move,
+1 thread, hash 16 MB. "A" is always the Stockfish 19 parameter set, "B" the
+variant:
+
+| B (variant) | games | A wins | B wins | draws | score for A | Elo (B − A) |
+|---|---|---|---|---|---|---|
+| `Solace LMR Scale=115` | 120 | 41 | 39 | 40 | 50.83 % | −5.8 |
+| `Solace LMR Scale=85` | 120 | 45 | 40 | 35 | 52.08 % | −14.5 |
+| `Solace Pruning Scale=110` | 120 | 43 | 39 | 38 | 51.67 % | −11.6 |
+| `Solace Pruning Scale=90` | 120 | 47 | 30 | 43 | 57.08 % | −49.6 |
+
+Reading the table: with 120 games the 95 % interval is roughly ±50–60 Elo, so
+only large effects are visible. Every variant lost ground, and the one that lost
+clearly — pruning 10 % less — lost about 50 Elo. The measured message is
+therefore negative but useful: **Stockfish 19's search constants are already
+better for this engine at 30 ms/move than the scaled variants tested here**, so
+no search-parameter change is shipped as a default. `Solace 0.2` keeps the
+upstream numbers and the options stay available for further tuning.
+
+Two further variants (`History Scale=115`, `Optimism Scale=50`) were queued and
+never played: with the four completed variants all at or below the baseline, the
+remaining computer time was moved into making the WebAssembly build itself
+correct and faster, which is the part a browser player actually feels.
+
+Three honest caveats:
+
+* 120 games per variant cannot resolve a 10-Elo effect; a claim like "Solace
+  searches better than Stockfish" would need thousands of games, and no such
+  claim is made anywhere in this project.
+* the matches ran on a *native* x86 build of exactly the same sources. It
+  searches the identical node counts as the WebAssembly build (`bench 1` =
+  1 808 810 nodes in both), so the search being measured is the same code; only
+  the wall clock differs, which is what makes thousands of games affordable.
+* tuning happened at 30 ms/move, which is much less thinking time than the
+  browser's own default of one second per move. A parameter that is neutral at
+  30 ms could still matter at one second, so the results decide "do not change
+  the defaults", not "the upstream values are optimal".
+
+### What the browser build does change
+
+Two changes are made for playing in a page, and neither is a strength claim:
+
+**Move Overhead is measured, not assumed.** Stockfish stops a `go movetime X`
+search at `X - Move Overhead` and counts on the reserve to cover everything
+else. Natively that is microseconds; in a browser it is a `postMessage`, a task
+hop, a wasm call boundary and sometimes a garbage collection. The page
+(`web/overhead.js`) times every answer, keeps the worst of the last twelve, and
+sets `Move Overhead` to one and a half times that, clamped to 50–500 ms. So the
+reserve adapts to the device: a fast desktop settles near 50 ms, a phone with
+janky scheduling raises it and stops losing on time.
+
+**The opening is varied.** A small book (`web/book.js`) plays one of a handful
+of sane first moves for the first six plies, so two games in a row are not the
+same game. It is book *variety*, not book theory: the engine leaves the book as
+soon as the position is not in the (deliberately tiny) table.
+
+### Reproducing any of this
+
+```sh
+# strength numbers
+node 0.2/tools/match.mjs --engine-a /tmp/workbuild/sf --engine-b /tmp/workbuild/sf \
+  --a "Solace Tuning=Stockfish 19" --b "Solace Tuning=Stockfish 19,Solace LMR Scale=115" \
+  --games 120 --movetime 30 --concurrency 2 --json /tmp/tune-lmr115.json
+
+# throughput and node parity of the wasm build
+node 0.2/tools/bench.mjs --variant relaxed --repeat 2
+```
+
+`tools/match.mjs` takes any two UCI engines, so the same command also answers
+"how does this build compare to released Stockfish 19" — with the same caveat
+that 120 games only resolves large differences.

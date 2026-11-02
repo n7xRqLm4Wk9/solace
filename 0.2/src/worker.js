@@ -27,7 +27,7 @@ self.onmessage = async (event) => {
   if (msg.type === 'init') {
     try {
       post({ type: 'status', state: 'loading' });
-      const mod = await import(msg.moduleUrl || '../dist/solace.js');
+      const mod = await import(msg.moduleUrl || '../engine/solace.js');
       const createModule = mod.default || mod.createSolace;
       engine = await createEngine({
         createModule,

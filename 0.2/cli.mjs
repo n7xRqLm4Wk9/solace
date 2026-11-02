@@ -10,22 +10,27 @@
  */
 
 import { createEngine } from './src/engine.js';
-import { NET_NAME } from './src/config.js';
+import { NET_NAME, engineFiles, pickVariant } from './src/config.js';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline';
+import { existsSync } from 'node:fs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const DIST = join(HERE, 'dist', 'solace.js');
-const WASM = join(HERE, 'dist', 'solace.wasm');
 const NET = join(HERE, 'assets', NET_NAME);
 
-const { default: createModule } = await import(DIST);
-const { pathToFileURL } = await import('node:url');
+// Prefer the relaxed-SIMD build when this runtime supports it and it exists.
+let variant = pickVariant(process.env.SOLACE_VARIANT || 'auto');
+let files = engineFiles(variant);
+if (!existsSync(join(HERE, 'engine', files.js))) {
+  variant = 'simd';
+  files = engineFiles(variant);
+}
+const { default: createModule } = await import(pathToFileURL(join(HERE, 'engine', files.js)).href);
 
 const engine = await createEngine({
   createModule,
-  wasmUrl: pathToFileURL(WASM).href,
+  wasmUrl: pathToFileURL(join(HERE, 'engine', files.wasm)).href,
   netUrl: pathToFileURL(NET).href,
   onLine: (line) => process.stdout.write(`${line}\n`),
   onError: (message) => process.stderr.write(`${message}\n`),

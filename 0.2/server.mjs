@@ -15,7 +15,7 @@
  * This server sends them. A static host must be configured the same way
  * (see docs/BUILD.md).
  *
- * Only files under 0.1.5/src, 0.2/web, 0.2/src, 0.2/dist and 0.2/assets are
+ * Only files under 0.1.5/src, 0.2/web, 0.2/src, 0.2/engine and 0.2/assets are
  * served; nothing else in the repository is reachable.
  */
 
@@ -26,7 +26,7 @@ import { extname, join, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = normalize(join(dirname(fileURLToPath(import.meta.url)), '..'));
-const ALLOWED = ['0.1.5/src/', '0.2/web/', '0.2/src/', '0.2/dist/', '0.2/assets/'];
+const ALLOWED = ['0.1.5/src/', '0.2/web/', '0.2/src/', '0.2/engine/', '0.2/assets/'];
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',

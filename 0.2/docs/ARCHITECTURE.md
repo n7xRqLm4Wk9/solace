@@ -12,7 +12,7 @@
                  src/engine.js  (loader)
         ┌─────────────────┼────────────────────┐
         ▼                 ▼                    ▼
-  dist/solace.js    dist/solace.wasm     assets/*.nnue
+  engine/solace.js    engine/solace.wasm     assets/*.nnue
   (Emscripten       (Stockfish 19 +      (NNUE weights,
    glue)             wasm_bridge.cpp)     downloaded once)
 ```
@@ -23,11 +23,11 @@
 means an upgrade is "replace the folder, re-apply the patches" and the diff
 against upstream is exactly `patches/`.
 
-**`src/wasm/wasm_bridge.cpp`** — 30 lines of C++ inside the engine that expose
+**`src/cpp/wasm_bridge.cpp`** — 30 lines of C++ inside the engine that expose
 `solace_command()` to JavaScript. The engine has no idea a browser exists; it
 parses the same UCI command lines as the desktop binary.
 
-**`dist/solace.{js,wasm}`** — build output. `-sMODULARIZE` gives an ES module
+**`engine/solace.{js,wasm}` and `engine/solace-relaxed.{js,wasm}`** — build output, two SIMD variants; `src/config.js` feature-tests relaxed SIMD and picks one at load time. `-sMODULARIZE` gives an ES module
 factory; `-sINVOKE_RUN=0` means the loader controls when `main()` runs, which is
 what allows the 98 MB network to be written into the virtual filesystem first.
 
@@ -76,7 +76,7 @@ must be cross-origin isolated, because WebAssembly shared memory needs
 
 ## Why the network is loaded at runtime instead of embedded
 
-Embedding it with `--preload-file` makes `dist/solace.wasm` 100 MB, so every
+Embedding it with `--preload-file` makes `engine/solace.wasm` 100 MB, so every
 visit downloads 100 MB even when the browser already has the file cached.
 Loading it separately keeps the engine small, lets the browser cache the network
 on its own, and shows a progress bar. `-sNNUE_EMBEDDING_OFF` is the switch that

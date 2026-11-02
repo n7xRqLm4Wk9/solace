@@ -7,8 +7,50 @@ export const ENGINE_NAME = 'Solace 0.2';
 
 /**
  * The NNUE network Stockfish 19 evaluates with. It is not stored in this
- * repository (98 MB); `node build/fetch-net.mjs` downloads and verifies it.
+ * repository (98 MB); `node scripts/fetch-net.mjs` downloads and verifies it.
  */
 export const NET_NAME = 'nn-1a298aa575a0.nnue';
 export const NET_SIZE = 98511183;
 export const NET_SHA256 = '1a298aa575a085434d29027978dc36867fe9c5bcea9376654b7a8eba1e52dfc2';
+
+/**
+ * A one-function module that uses a relaxed-SIMD instruction
+ * (`i8x16.relaxed_swizzle`). Browsers without relaxed SIMD refuse to validate
+ * it, which is exactly the check the loader needs: the relaxed build is faster,
+ * the plain SIMD build runs everywhere.
+ */
+export function hasRelaxedSimd() {
+  try {
+    const lanes = new Uint8Array(16);
+    const body = [0x00, 0xfd, 0x0c, ...lanes, 0xfd, 0x0c, ...lanes, 0xfd, 0x80, 0x02, 0x1a, 0x0b];
+    const code = [0x01, body.length, ...body];
+    const module = new Uint8Array([
+      0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, // magic + version
+      0x01, 0x04, 0x01, 0x60, 0x00, 0x00, // type: () -> ()
+      0x03, 0x02, 0x01, 0x00, // one function
+      0x0a, code.length, ...code, // code section
+    ]);
+    return WebAssembly.validate(module);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Picks the engine build to load.
+ *
+ * Both builds are made from the same sources; the relaxed one lets the compiler
+ * fold some SIMD sequences the baseline build has to keep separate. The plain
+ * build is the fallback and is always produced.
+ */
+export function pickVariant(requested = 'auto') {
+  if (requested === 'relaxed' || requested === 'simd') return requested;
+  return hasRelaxedSimd() ? 'relaxed' : 'simd';
+}
+
+/** File names of the engine build for a variant. */
+export function engineFiles(variant) {
+  return variant === 'relaxed'
+    ? { js: 'solace-relaxed.js', wasm: 'solace-relaxed.wasm' }
+    : { js: 'solace.js', wasm: 'solace.wasm' };
+}

@@ -4,14 +4,16 @@
  * Rules, move generation and FEN handling come from the battle-tested board
  * model of the pure-JavaScript engine in 0.1.5 (read-only import: 0.1.5 is not
  * modified by this folder). The engine doing the thinking is the WebAssembly
- * build of Stockfish in ../dist/.
+ * build of Stockfish in ../engine/.
  */
 
 import { createPosition } from '../../0.1.5/src/core/position.js';
 import { MoveList, moveFrom, moveTo, moveToUci, promotionType } from '../../0.1.5/src/core/moves.js';
 import { WHITE, BLACK, KING, pieceType, pieceColour } from '../../0.1.5/src/core/types.js';
 import { SolaceClient } from '../src/client.js';
-import { NET_NAME } from '../src/config.js';
+import { bookMove, setKeyFunction } from './book.js';
+import { OverheadMeter, MIN_OVERHEAD } from './overhead.js';
+import { NET_NAME, engineFiles, pickVariant } from '../src/config.js';
 
 const GLYPHS = { [1]: '♟', [2]: '♞', [3]: '♝', [4]: '♜', [5]: '♛', [6]: '♚' };
 const WHITE_GLYPHS = { [1]: '♙', [2]: '♘', [3]: '♗', [4]: '♖', [5]: '♕', [6]: '♔' };
@@ -30,7 +32,11 @@ const ui = {
   eval: document.getElementById('eval'),
   moves: document.getElementById('move-list'),
   promotion: document.getElementById('promotion'),
+  book: document.getElementById('book'),
 };
+
+// Learns this device's Move Overhead instead of assuming a desktop default.
+const overheadMeter = new OverheadMeter();
 
 const game = {
   position: createPosition('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'),
@@ -49,6 +55,35 @@ const game = {
 let engine = null;
 
 // ---------------------------------------------------------------------------
+// opening book: only the first plies are randomised, so games differ
+// ---------------------------------------------------------------------------
+
+function keyAfterMoves(moves) {
+  let pos;
+  try {
+    pos = createPosition('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    for (const uci of moves) {
+      const list = new MoveList(256);
+      pos.generateLegalMoves(list);
+      let applied = false;
+      for (let i = 0; i < list.count; i++) {
+        if (moveToUci(list.moves[i]) === uci) {
+          pos.makeMove(list.moves[i]);
+          applied = true;
+          break;
+        }
+      }
+      if (!applied) return null;
+    }
+  } catch {
+    return null;
+  }
+  return pos.toFen().split(' ').slice(0, 4).join(' ');
+}
+
+setKeyFunction(keyAfterMoves);
+
+// ---------------------------------------------------------------------------
 // engine
 // ---------------------------------------------------------------------------
 
@@ -56,15 +91,7 @@ async function startEngine() {
   setStatus('Loading engine…');
   ui.progressWrap.hidden = false;
   try {
-    engine = await SolaceClient.start({
-      workerUrl: '../src/worker.js',
-      moduleUrl: '../dist/solace.js',
-      wasmUrl: '../dist/solace.wasm',
-      netUrl: `../assets/${NET_NAME}`,
-      onStatus: ({ state, detail }) => {
-        if (state === 'error') setStatus(detail || 'engine error', true);
-      },
-    });
+    engine = await loadEngine(pickVariant());
 
     engine.on('net', ({ loaded, total }) => {
       const pct = total ? Math.round((loaded / total) * 100) : 0;
@@ -80,6 +107,8 @@ async function startEngine() {
     engine.on('error', ({ message }) => setStatus(message, true));
 
     engine.position(null);
+    engine.setOption('Move Overhead', String(MIN_OVERHEAD));
+    overheadMeter.markApplied();
     ui.progressWrap.hidden = true;
     setStatus('Ready');
     applyStrength();
@@ -87,9 +116,34 @@ async function startEngine() {
   } catch (err) {
     ui.progressWrap.hidden = true;
     setStatus(
-      `${err.message} — is assets/${NET_NAME} present? Run "node build/fetch-net.mjs".`,
+      `${err.message} — is assets/${NET_NAME} present? Run "node scripts/fetch-net.mjs".`,
       true,
     );
+  }
+}
+
+/**
+ * Starts the engine on the best build this runtime can run. A build can also be
+ * missing (only one variant was compiled), so a failed relaxed load falls back
+ * to the plain SIMD build instead of leaving the page broken.
+ */
+async function loadEngine(variant) {
+  const files = engineFiles(variant);
+  setStatus(`Loading engine (${variant === 'relaxed' ? 'relaxed SIMD' : 'SIMD'})…`);
+  try {
+    return await SolaceClient.start({
+      workerUrl: '../src/worker.js',
+      moduleUrl: `../engine/${files.js}`,
+      wasmUrl: `../engine/${files.wasm}`,
+      netUrl: `../assets/${NET_NAME}`,
+      onStatus: ({ state, detail }) => {
+        if (state === 'error') setStatus(detail || 'engine error', true);
+      },
+    });
+  } catch (err) {
+    if (variant !== 'relaxed') throw err;
+    setStatus('Relaxed SIMD build unavailable, using the SIMD build…');
+    return loadEngine('simd');
   }
 }
 
@@ -110,15 +164,28 @@ function askEngineToMove() {
   const sideToMove = game.position.side;
   if (sideToMove === game.playerColor) return;
 
+  // Opening variety: play a book move for the first plies when there is one.
+  if (game.moves.length < 6 && ui.book.checked) {
+    const candidate = bookMove(game.moves);
+    if (candidate && playUci(candidate)) {
+      maybeEngineMove();
+      return;
+    }
+  }
+
   game.thinking = true;
   setStatus('Solace is thinking…');
   engine.position(game.position.toFen(), []);
   const time = Number(ui.movetime.value) || 1000;
+  // Timed so the page can learn how late this browser answers (overhead.js).
+  game.searchStarted = performance.now();
+  game.searchRequested = time;
   engine.send(`go movetime ${time}`);
 }
 
 function onBestMove(line) {
   game.thinking = false;
+  learnOverhead();
   const [, move] = line.split(/\s+/);
   if (!move || move === '(none)') {
     finishIfOver();
@@ -131,6 +198,22 @@ function onBestMove(line) {
 // ---------------------------------------------------------------------------
 // game flow
 // ---------------------------------------------------------------------------
+
+/**
+ * Measures how much later than requested the engine answered, and raises the
+ * engine's Move Overhead when this browser is consistently late. Stockfish
+ * stops `go movetime X` at `X - Move Overhead`; the reserve has to cover the
+ * task hop, the wasm boundary and the occasional garbage collection.
+ */
+function learnOverhead() {
+  if (!game.searchStarted || !game.searchRequested) return;
+  overheadMeter.record(game.searchRequested, performance.now() - game.searchStarted);
+  game.searchStarted = 0;
+  if (overheadMeter.shouldUpdate()) {
+    engine.setOption('Move Overhead', String(overheadMeter.current));
+    overheadMeter.markApplied();
+  }
+}
 
 function maybeEngineMove() {
   if (game.gameOver || !engine) return;
