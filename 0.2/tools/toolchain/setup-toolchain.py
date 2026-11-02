@@ -115,9 +115,19 @@ if __name__ == '__main__':
         shell(os.path.join(llvm_bin, tool),
               'exec node %s/wasm-clang/bin/%s "$@"\n' % (ns, tool))
 
-    # the compilers are driven through the assembly-capable wrapper
-    wrap_src = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tools', 'clang-wrap.py')
-    if os.path.exists(wrap_src) and os.path.abspath(os.path.dirname(wrap_src)) != os.path.abspath(tools_dir):
+    # the compilers are driven through the assembly-capable wrapper; it lives
+    # next to this script in the repository, and inside <toolchain>/tools/ once
+    # installed
+    here = os.path.dirname(os.path.abspath(__file__))
+    wrap_src = None
+    for candidate in (os.path.join(here, 'clang-wrap.py'),
+                      os.path.join(here, 'tools', 'clang-wrap.py')):
+        if os.path.exists(candidate):
+            wrap_src = candidate
+            break
+    if wrap_src is None:
+        sys.exit('cannot find clang-wrap.py next to %s' % __file__)
+    if os.path.abspath(os.path.dirname(wrap_src)) != os.path.abspath(tools_dir):
         shutil.copy2(wrap_src, os.path.join(tools_dir, 'clang-wrap.py'))
     shell(os.path.join(llvm_bin, 'clang.real'), 'exec node %s/wasm-clang/bin/clang "$@"\n' % ns)
     for tool in ('clang', 'clang++', 'cc', 'c++', 'gcc', 'g++'):

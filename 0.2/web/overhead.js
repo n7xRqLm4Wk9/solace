@@ -17,6 +17,9 @@
 /** Never reserve less than this: one task hop can already cost 20-30 ms. */
 export const MIN_OVERHEAD = 50;
 
+/** Shortest search worth asking for, in ms. */
+export const MIN_THINK_TIME = 120;
+
 /** Never reserve more: past this the engine would spend its time waiting. */
 export const MAX_OVERHEAD = 500;
 
@@ -38,6 +41,26 @@ export function overheadFromSamples(samples) {
   if (!usable.length) return MIN_OVERHEAD;
   const worst = Math.max(...usable);
   return Math.round(Math.min(MAX_OVERHEAD, Math.max(MIN_OVERHEAD, worst * 1.5)));
+}
+
+/**
+ * How long to actually ask the engine to search.
+ *
+ * This exists because of a Stockfish detail that is easy to get wrong: the UCI
+ * option `Move Overhead` is only used when the search is bounded by a *clock*
+ * (`go wtime … btime …`). A `go movetime X` search stops at exactly X, so no
+ * amount of `Move Overhead` shortens it — the reserve has to be subtracted by
+ * whoever sends the command. The page sends `movetime`, so it subtracts here.
+ *
+ * @param {object} options
+ * @param {number} options.requested  what the player asked for (ms)
+ * @param {number} [options.factor]   throttle factor from ThrottleGuard (≤ 1)
+ * @param {number} [options.reserve]  time to keep back for browser latency (ms)
+ * @returns {number} milliseconds to send in `go movetime`
+ */
+export function searchTime({ requested, factor = 1, reserve = 0 }) {
+  const budget = Math.max(MIN_THINK_TIME, Number(requested) * factor);
+  return Math.max(MIN_THINK_TIME, Math.round(budget - reserve));
 }
 
 /** Lateness of one search: how long it took minus how long it was asked for. */

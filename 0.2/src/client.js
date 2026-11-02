@@ -15,7 +15,11 @@
 
 export class SolaceClient {
   #worker;
+  // Bounded: a long game (or one `bench`) prints tens of thousands of lines and
+  // an unbounded array is a slow memory leak on a phone. `waitFor` only ever
+  // looks at what arrives next, so nothing of value is lost.
   #lines = [];
+  #maxLines = 400;
   #listeners = new Map();
   #ready = false;
   #started;
@@ -28,7 +32,7 @@ export class SolaceClient {
     };
   }
 
-  static start({ workerUrl = '../src/worker.js', wasmUrl, netUrl, moduleUrl, onStatus } = {}) {
+  static start({ workerUrl = '../src/worker.js', wasmUrl, netUrl, moduleUrl, cacheName, onStatus } = {}) {
     const worker = new Worker(workerUrl, { type: 'module' });
     const client = new SolaceClient(worker);
     if (onStatus) client.on('status', onStatus);
@@ -45,7 +49,7 @@ export class SolaceClient {
       });
       client.on('error', ({ message }) => client.#emit('status', { state: 'error', detail: message }));
     });
-    worker.postMessage({ type: 'init', wasmUrl, netUrl, moduleUrl });
+    worker.postMessage({ type: 'init', wasmUrl, netUrl, moduleUrl, cacheName });
     return client.#started;
   }
 
@@ -126,11 +130,10 @@ export class SolaceClient {
   }
 
   #onMessage(msg) {
-    if (msg.type === 'line') {
-      this.#lines.push(msg.line);
-      this.#emit('line', msg.line);
-      if (msg.line.startsWith('info ')) this.#emit('info', parseInfo(msg.line));
-      else if (msg.line.startsWith('bestmove')) this.#emit('bestmove', msg.line);
+    if (msg.type === 'lines') {
+      for (const line of msg.lines || []) this.#accept(line);
+    } else if (msg.type === 'line') {
+      this.#accept(msg.line);
     } else if (msg.type === 'status') {
       this.#emit('status', msg);
     } else if (msg.type === 'net') {
@@ -138,6 +141,14 @@ export class SolaceClient {
     } else if (msg.type === 'error') {
       this.#emit('error', msg);
     }
+  }
+
+  #accept(line) {
+    this.#lines.push(line);
+    if (this.#lines.length > this.#maxLines) this.#lines.splice(0, this.#lines.length - this.#maxLines);
+    this.#emit('line', line);
+    if (line.startsWith('info ')) this.#emit('info', parseInfo(line));
+    else if (line.startsWith('bestmove')) this.#emit('bestmove', line);
   }
 
   #emit(event, payload) {

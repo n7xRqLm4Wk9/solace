@@ -54,3 +54,46 @@ export function engineFiles(variant) {
     ? { js: 'solace-relaxed.js', wasm: 'solace-relaxed.wasm' }
     : { js: 'solace.js', wasm: 'solace.wasm' };
 }
+
+// ---------------------------------------------------------------------------
+// device profile
+// ---------------------------------------------------------------------------
+
+/**
+ * Picks the engine settings a device can actually afford.
+ *
+ * The defaults in Stockfish are desktop defaults: 16 MB of hash and a one
+ * second think time. A phone with 4 GB of RAM shares it with the browser, the
+ * page and the 98 MB network the engine keeps resident, so the hash has to be
+ * smaller there; a device with 2 GB should not be asked to hold more than a
+ * few megabytes. `navigator.deviceMemory` is a coarse, deliberately rounded
+ * number (0.25, 0.5, 1, 2, 4, 8) and is `undefined` in Safari; the fallback
+ * assumes a mid-range phone.
+ *
+ * @param {object} [nav] navigator-like object (injectable for tests)
+ * @returns {{hashMB: number, threads: number, thinkTime: number, tier: string}}
+ */
+export function deviceProfile(nav = typeof navigator !== 'undefined' ? navigator : {}) {
+  const memory = Number(nav.deviceMemory) || 0; // GB, undefined in Firefox/Safari
+  const cores = Number(nav.hardwareConcurrency) || 0;
+
+  let tier = 'mid';
+  if (memory && memory <= 2) tier = 'low';
+  else if (memory >= 8 && cores >= 8) tier = 'high';
+
+  // Coarse pointers are phones and tablets: they get the mobile defaults even
+  // when the browser refuses to report memory.
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+
+  const hashMB = tier === 'low' ? 4 : tier === 'high' ? 32 : coarse ? 8 : 16;
+  const thinkTime = tier === 'low' ? 500 : tier === 'high' ? 1500 : 1000;
+
+  return {
+    tier,
+    hashMB,
+    // One search thread: a second one competes with the page for the same cores
+    // and, on a phone, for the same thermal budget.
+    threads: 1,
+    thinkTime,
+  };
+}

@@ -10,6 +10,13 @@
 #   CLEAN=1            rebuild every object instead of reusing scripts/obj
 #   BUILD_DIR=<dir>    where objects live (default scripts/obj)
 #   EXTRA_CFLAGS=<..>  extra flags for both compile and link, e.g. -flto
+#   INITIAL_MEMORY=<n> wasm memory reserved at startup (default 64 MB)
+#   MAXIMUM_MEMORY=<n> wasm memory the module may grow to (default 1 GB)
+#
+# Memory defaults are chosen for phones, not desktops: the engine needs ~100 MB
+# for the network plus ~16 MB of hash, so reserving 64 MB and growing on demand
+# keeps the initial allocation small enough that a mid-range Android browser
+# does not refuse it or kill the tab. A desktop can raise them.
 #
 # Requirements: Emscripten (em++ 3.1.50 or newer) on PATH, or EMXX pointing at
 # it. docs/BUILD.md explains how to install it.
@@ -113,9 +120,9 @@ for variant in $VARIANT_LIST; do
     # shellcheck disable=SC2086
     "$EMXX" "$OBJ/$variant"/*.o $CFLAGS \
         -sALLOW_MEMORY_GROWTH=1 \
-        -sINITIAL_MEMORY=268435456 \
-        -sMAXIMUM_MEMORY=2147483648 \
-        -sSTACK_SIZE=5242880 \
+        -sINITIAL_MEMORY=${INITIAL_MEMORY:-67108864} \
+        -sMAXIMUM_MEMORY=${MAXIMUM_MEMORY:-1073741824} \
+        -sSTACK_SIZE=${STACK_SIZE:-5242880} \
         -sMODULARIZE=1 \
         -sEXPORT_ES6=1 \
         -sEXPORT_NAME=createSolace \
@@ -125,8 +132,8 @@ for variant in $VARIANT_LIST; do
         -sENVIRONMENT=web,worker,node \
         -sPTHREAD_POOL_SIZE=0 \
         -sPTHREAD_POOL_SIZE_STRICT=0 \
-        -sEXPORTED_FUNCTIONS=['_main','_solace_command','_solace_ready','_malloc','_free'] \
-        -sEXPORTED_RUNTIME_METHODS=['FS','callMain','ccall','UTF8ToString','stringToUTF8','lengthBytesUTF8'] \
+        -sEXPORTED_FUNCTIONS=['_main','_solace_command','_solace_ready','_solace_load_net','_malloc','_free'] \
+        -sEXPORTED_RUNTIME_METHODS=['FS','callMain','ccall','UTF8ToString','stringToUTF8','lengthBytesUTF8','HEAPU8'] \
         ${EXTRA_CFLAGS:-} \
         -o "$OUT/$NAME.js"
     ls -l "$OUT/$NAME.js" "$OUT/$NAME.wasm"

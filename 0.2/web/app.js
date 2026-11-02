@@ -12,8 +12,9 @@ import { MoveList, moveFrom, moveTo, moveToUci, promotionType } from '../../0.1.
 import { WHITE, BLACK, KING, pieceType, pieceColour } from '../../0.1.5/src/core/types.js';
 import { SolaceClient } from '../src/client.js';
 import { bookMove, setKeyFunction } from './book.js';
-import { OverheadMeter, MIN_OVERHEAD } from './overhead.js';
-import { NET_NAME, engineFiles, pickVariant } from '../src/config.js';
+import { OverheadMeter, MIN_OVERHEAD, searchTime } from './overhead.js';
+import { ThrottleGuard } from './thermal.js';
+import { NET_NAME, deviceProfile, engineFiles, pickVariant } from '../src/config.js';
 
 const GLYPHS = { [1]: '♟', [2]: '♞', [3]: '♝', [4]: '♜', [5]: '♛', [6]: '♚' };
 const WHITE_GLYPHS = { [1]: '♙', [2]: '♘', [3]: '♗', [4]: '♖', [5]: '♕', [6]: '♔' };
@@ -33,10 +34,15 @@ const ui = {
   moves: document.getElementById('move-list'),
   promotion: document.getElementById('promotion'),
   book: document.getElementById('book'),
+  device: document.getElementById('device'),
 };
 
 // Learns this device's Move Overhead instead of assuming a desktop default.
 const overheadMeter = new OverheadMeter();
+// Notices thermal throttling from the nodes/second the engine reports.
+const throttle = new ThrottleGuard();
+// What this device can afford, filled in during startEngine().
+const profile = deviceProfile();
 
 const game = {
   position: createPosition('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'),
@@ -99,16 +105,23 @@ async function startEngine() {
       setStatus(`Downloading network… ${pct}%`);
     });
 
-    engine.on('line', (line) => {
-      if (line.startsWith('info ') && line.includes(' score ')) showInfo(line);
+    engine.on('info', (info) => {
+      if (info.nps) feedThroughput(info.nps);
+      if (info.score || info.depth) showInfo(info);
     });
 
     engine.on('bestmove', (line) => onBestMove(line));
     engine.on('error', ({ message }) => setStatus(message, true));
 
     engine.position(null);
+    // Mobile defaults: a hash sized to the device, one search thread, and a
+    // think time the phone can actually deliver.
+    engine.setOption('Hash', String(profile.hashMB));
+    engine.setOption('Threads', String(profile.threads));
     engine.setOption('Move Overhead', String(MIN_OVERHEAD));
     overheadMeter.markApplied();
+    applyDefaultThinkTime();
+    showDeviceHint();
     ui.progressWrap.hidden = true;
     setStatus('Ready');
     applyStrength();
@@ -176,7 +189,15 @@ function askEngineToMove() {
   game.thinking = true;
   setStatus('Solace is thinking…');
   engine.position(game.position.toFen(), []);
-  const time = Number(ui.movetime.value) || 1000;
+  // The budget the player chose, minus what this browser needs to hand the
+  // answer back (see searchTime(): a `go movetime` search ignores `Move
+  // Overhead`, so the reserve has to come off the request itself).
+  const time = searchTime({
+    requested: Number(ui.movetime.value) || 1000,
+    factor: throttle.factor,
+    reserve: reserve() + (game.wakeReserve || 0),
+  });
+  game.wakeReserve = 0;
   // Timed so the page can learn how late this browser answers (overhead.js).
   game.searchStarted = performance.now();
   game.searchRequested = time;
@@ -205,12 +226,24 @@ function onBestMove(line) {
  * stops `go movetime X` at `X - Move Overhead`; the reserve has to cover the
  * task hop, the wasm boundary and the occasional garbage collection.
  */
+/**
+ * The reserve this browser needs right now: what the last searches measured,
+ * plus what thermal throttling adds. Kept as one function so the measured value
+ * (which is recomputed from samples every move) is never overwritten by the
+ * throttle term.
+ */
+function reserve() {
+  return overheadMeter.current + throttle.overheadBonus();
+}
+
 function learnOverhead() {
   if (!game.searchStarted || !game.searchRequested) return;
   overheadMeter.record(game.searchRequested, performance.now() - game.searchStarted);
   game.searchStarted = 0;
+  // `Move Overhead` only affects clock-based searches, but the CLI and any UCI
+  // client share the same engine settings, so keep it in step anyway.
   if (overheadMeter.shouldUpdate()) {
-    engine.setOption('Move Overhead', String(overheadMeter.current));
+    engine.setOption('Move Overhead', String(reserve()));
     overheadMeter.markApplied();
   }
 }
@@ -436,19 +469,47 @@ function renderMoves() {
   ui.moves.scrollTop = ui.moves.scrollHeight;
 }
 
-function showInfo(line) {
-  const depth = /depth (\d+)/.exec(line)?.[1];
-  const score = /score (cp|mate) (-?\d+)/.exec(line);
-  const nps = /nps (\d+)/.exec(line)?.[1];
-  let text = '';
-  if (depth) text += `depth ${depth}`;
-  if (score) {
-    const value = Number(score[2]);
-    const shown = score[1] === 'mate' ? `#${value > 0 ? '' : '-'}${Math.abs(value)}` : (value / 100).toFixed(2);
-    text += `  ${shown}`;
+/**
+ * The eval readout is redrawn at most once per animation frame. Engine output
+ * arrives far faster than the screen refreshes, and writing to the DOM for
+ * every `info` line is one of the cheapest ways to make a phone stutter.
+ */
+let pendingInfo = null;
+let infoFrame = 0;
+
+function showInfo(info) {
+  pendingInfo = info;
+  if (infoFrame) return;
+  infoFrame = requestAnimationFrame(() => {
+    infoFrame = 0;
+    const shown = pendingInfo;
+    if (!shown) return;
+    const parts = [];
+    if (shown.depth) parts.push(`depth ${shown.depth}`);
+    if (shown.score) {
+      const { type, value } = shown.score;
+      parts.push(type === 'mate' ? `#${value > 0 ? '' : '-'}${Math.abs(value)}` : (value / 100).toFixed(2));
+    }
+    if (shown.nps) parts.push(`${(shown.nps / 1e3).toFixed(0)} kn/s`);
+    ui.eval.textContent = parts.join('  ');
+  });
+}
+
+/** Feeds the search rate to the throttle detector and adapts if the phone is hot. */
+function feedThroughput(nps) {
+  const wasHot = throttle.hot;
+  const state = throttle.observe(nps);
+  if (!state.hot) {
+    if (wasHot) setStatus('Device cooled down — back to full thinking time');
+    return;
   }
-  if (nps) text += `  ${(Number(nps) / 1e6).toFixed(2)} Mn/s`;
-  ui.eval.textContent = text;
+
+  // A hot device needs a bigger reserve for everything around the search, and
+  // the next `go movetime` is shortened by searchTime() using throttle.factor.
+  engine.setOption('Move Overhead', String(reserve()));
+  overheadMeter.markApplied();
+  if (!wasHot)
+    setStatus(`Phone is warming up — ${Math.round(state.factor * 100)}% think time to stay smooth`);
 }
 
 function setStatus(text, isError = false) {
@@ -463,6 +524,61 @@ function moveFromUci(uci) {
 function moveToUciTarget(uci) {
   return (uci.charCodeAt(2) - 97) + (Number(uci[3]) - 1) * 8;
 }
+
+// ---------------------------------------------------------------------------
+// mobile behaviour
+// ---------------------------------------------------------------------------
+
+/** Preselects the think time this device can keep up with. */
+function applyDefaultThinkTime() {
+  const options = [...ui.movetime.options].map((o) => Number(o.value));
+  const closest = options.reduce(
+    (best, v) => (Math.abs(v - profile.thinkTime) < Math.abs(best - profile.thinkTime) ? v : best),
+    options[0],
+  );
+  ui.movetime.value = String(closest);
+}
+
+/** Tells the player what the page decided, so nothing is silently different. */
+function showDeviceHint() {
+  const note = `This device: ${profile.tier} profile, ${profile.hashMB} MB hash, optimised for phones`;
+  if (ui.device) {
+    ui.device.textContent = note;
+    return;
+  }
+  const line = document.createElement('p');
+  line.className = 'fineprint device-hint';
+  line.textContent = note;
+  ui.status.after(line);
+}
+
+/**
+ * A hidden tab is not a paused engine: the search keeps running on its worker
+ * thread, burns battery and heats the phone for a move nobody is looking at,
+ * and when the tab comes back the browser has throttled its timers so much that
+ * the first answer arrives late. So the pending search is stopped outright and
+ * re-issued on return, with a larger time reserve for the first move back.
+ */
+function handleVisibility() {
+  if (document.hidden) {
+    if (game.thinking && engine) {
+      engine.send('stop');
+      game.paused = true;
+    }
+    return;
+  }
+  if (!game.paused) return;
+  game.paused = false;
+  // Timers were throttled while the tab was hidden, so the first answer back is
+  // going to be late; reserve extra for that one move.
+  game.wakeReserve = 150;
+  overheadMeter.reset();
+  game.thinking = false;
+  setStatus('Back — continuing the game');
+  maybeEngineMove();
+}
+
+document.addEventListener('visibilitychange', handleVisibility);
 
 ui.newGame.addEventListener('click', newGame);
 ui.undo.addEventListener('click', undo);

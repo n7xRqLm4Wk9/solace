@@ -38,6 +38,24 @@ Stockfish 19` restores the upstream engine exactly (verified: `bench` searches
 the identical node count, 1 808 810 for `bench 1`). See
 [TUNING.md](TUNING.md) for what the preset contains and how it was measured.
 
+## 0004-mobile-memory.patch — load the network without a copy
+
+| file | change |
+|---|---|
+| `src/nnue/network.h`, `src/nnue/network.cpp` | adds `Network::load_from_memory(const void*, usize, EvalFile&)`: the same parse as `load_internal()`, but over a caller-owned buffer instead of a file or the embedded blob. Wrapped in `#ifdef SOLACE_WASM`. |
+| `src/engine.h`, `src/engine.cpp` | adds `Engine::load_network_from_memory()`, which replicates the loaded network to the search threads exactly like `load_network()` does. |
+| `src/uci.h` | one public forwarding method so the bridge can reach it without touching `Engine`'s privacy. |
+
+Why: in a browser the network used to be fetched into a JavaScript array and
+written into Emscripten's in-memory filesystem, which keeps a second copy inside
+the wasm heap — 98 MB twice, plus the 98 MB of resulting weights. Now the
+download is streamed into one buffer in the wasm heap and parsed from there.
+
+Behaviour from the user's point of view: none. The UCI option `EvalFile` still
+works, still accepts a path, and a build with a real filesystem behaves exactly
+as upstream; the memory loader is only used by the WebAssembly bridge and only
+when the page asks for it.
+
 ## 0003 in practice: what the defaults were set to
 
 The tuning layer exists so the search can be changed without touching upstream
@@ -53,13 +71,12 @@ from Stockfish in what it measures and adapts (below), not in guessed constants.
 
 ## New files: `src/cpp/*.cpp` (ours, not patches, copied in by the build)
 
-Two exported C functions:
-
 `wasm_bridge.cpp` exports:
 
 ```c
-void solace_command(const char* line);  // run one UCI command line
-int  solace_ready();                    // 1 once main() created the engine
+void solace_command(const char* line);   // run one UCI command line
+int  solace_ready();                     // 1 once main() created the engine
+int  solace_load_net(const void*, int);  // parse the NNUE from a wasm-heap buffer
 ```
 
 `solace.cpp` / `solace.h` hold the tuning layer described above.
@@ -80,15 +97,18 @@ evaluation or the search; all of them are tested in `tests/web.mjs`.
 |---|---|---|
 | `web/overhead.js` | times every engine answer, keeps the worst of the last twelve, sets `Move Overhead` to 1.5× that, clamped to 50–500 ms | Stockfish's 10 ms reserve was measured for native binaries; a browser adds a task hop, a wasm boundary and garbage collection, and loses games on time without the correction |
 | `web/book.js` | plays one of a handful of sane moves for the first six plies | two consecutive games should not be the same game |
+| `web/thermal.js` | watches nodes/second and shortens searches when the phone throttles | a hot phone otherwise overruns its own clock and stutters the page |
+| `src/config.js` `deviceProfile()` | hash and think time sized from `navigator.deviceMemory` | a 2 GB phone should not be given a 16 MB table and a one second search |
 | `src/config.js` | picks the relaxed-SIMD build when the runtime supports it, else the plain SIMD one | measured ~4 % faster with a bit-identical search (`tools/bench.mjs`) |
 
 ## Build-time differences (not source changes)
 
 | what | upstream wasm build | Solace 0.2 |
 |---|---|---|
-| network | appended with `--preload-file`, inside the wasm | written into the virtual filesystem by `src/engine.js` before `main()` runs (`-DNNUE_EMBEDDING_OFF`), then freed |
+| network | appended with `--preload-file`, inside the wasm | streamed into one buffer in the wasm heap and parsed from there (`-DNNUE_EMBEDDING_OFF` + patch 0004), then freed |
 | entry | `main()` runs the UCI loop on stdin | `-sINVOKE_RUN=0`, loader calls `callMain([])`, then injects commands |
 | SIMD | one `-msimd128` build | two builds, plain SIMD and relaxed SIMD, chosen at load time |
+| memory | Emscripten default (16 MB initial, 2 GB max) | 64 MB initial, 1 GB max, growth on demand — sized so a mid-range phone accepts the allocation |
 | everything else | identical flags: `-pthread -msimd128 -DUSE_POPCNT -DUSE_SLOPPY_ATOMICS`, Syzygy off | same |
 
 ## How to apply the patches to a newer Stockfish

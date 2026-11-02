@@ -35,6 +35,8 @@ Useful switches:
 | `CLEAN=1` | ignore cached objects and rebuild everything |
 | `BUILD_DIR=/tmp/obj` | where the objects live (default `scripts/obj`) |
 | `EXTRA_CFLAGS=-flto` | extra compile **and** link flags, for experiments |
+| `INITIAL_MEMORY=67108864` | wasm memory reserved at start-up (default 64 MB) |
+| `MAXIMUM_MEMORY=1073741824` | how far it may grow (default 1 GB) |
 
 Objects live in `scripts/obj/<variant>/` and are reused, so after editing one
 file only that file is recompiled:
@@ -160,10 +162,19 @@ Measured size, with the network kept out of the binary:
   so `go infinite` + `stop` behave like the desktop engine.
 * `-msimd128` uses WebAssembly SIMD; `-mrelaxed-simd` additionally uses the
   relaxed-SIMD instructions.
-* `-sINVOKE_RUN=0 -sEXIT_RUNTIME=0` let the loader write the network file
-  *before* `main()` runs, then keep the runtime alive after `main()` returns.
-* `-sINITIAL_MEMORY=256MB -sALLOW_MEMORY_GROWTH` start large enough that the
-  search never pays for growing the heap.
+* `-sINVOKE_RUN=0 -sEXIT_RUNTIME=0` let the loader fill the network buffer
+  *before* `main()` runs (and parse it right after), then keep the runtime alive
+  after `main()` returns.
+* `-sINITIAL_MEMORY=64MB -sALLOW_MEMORY_GROWTH -sMAXIMUM_MEMORY=1GB` reserve
+  little and grow on demand. This matters on phones: a module that asks the
+  browser for 256 MB of shared memory before doing anything is the difference
+  between a page that loads and a tab that gets killed. The engine quickly grows
+  the heap to hold the network and the hash; it never shrinks, so raise
+  `INITIAL_MEMORY` only if you know the target.
+* `-sEXPORTED_FUNCTIONS` includes `_solace_load_net` (patch 0004) and
+  `-sEXPORTED_RUNTIME_METHODS` includes `HEAPU8`: the loader streams the network
+  into the wasm heap through that view instead of writing a 98 MB file into the
+  virtual filesystem.
 
 ### What the flags are worth, measured
 
@@ -227,9 +238,10 @@ node tests/loader.mjs    # the JS loader: net handling, line splitting, parsing
 node tests/run.mjs       # UCI, perft, stop, threads, MultiPV, self-play
 node tests/web.mjs       # page assets, server headers, worker protocol
 node tools/bench.mjs     # throughput + node parity
+node tools/profile.mjs   # start-up phases, memory, bridge cost
 ```
 
-All four run without a browser. `tests/run.mjs` checks move legality with the
+All five run without a browser. `tests/run.mjs` checks move legality with the
 independent JavaScript board model from `0.1.5`, so a broken build is caught
 rather than "the engine answered something".
 

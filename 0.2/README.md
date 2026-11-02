@@ -34,9 +34,10 @@ drive it from JavaScript:
 4. a tuning layer (`src/cpp/solace.cpp`, patch `0003`) exposes the search and
    evaluation parameters Solace re-tunes for browser time controls, and its
    preset is measured by self-play — see [docs/TUNING.md](docs/TUNING.md),
-5. the page measures how late this browser answers and raises the engine's
-   `Move Overhead` to match (`web/overhead.js`), instead of assuming the native
-   10 ms reserve,
+5. the page measures how late this browser answers and subtracts that reserve
+   from the requested `movetime` (`web/overhead.js`), instead of assuming the
+   native 10 ms; on a phone it also sizes the hash and the think time to the
+   device and shortens searches when the device throttles (`docs/MOBILE.md`),
 6. the page plays a small opening book so consecutive games differ
    (`web/book.js`),
 7. two SIMD builds are produced and the faster one is chosen at load time
@@ -51,6 +52,16 @@ dropped — see [docs/TUNING.md](docs/TUNING.md).
 The patches are in [`patches/`](patches) and are listed line by line in
 [docs/MODIFICATIONS.md](docs/MODIFICATIONS.md), as the GPL requires.
 
+## On a phone
+
+The build target is a mid-range Android phone, not a desktop. What that changes:
+the network is streamed into a single buffer in the wasm heap instead of being
+copied into a virtual filesystem, the wasm memory is reserved lazily (64 MB, not
+256 MB), the network is cached for the next visit, engine output is batched
+across the worker boundary, searches shorten themselves when the phone starts to
+throttle, and a tab that goes to the background stops searching instead of
+heating the phone. Measurements and reasoning: [docs/MOBILE.md](docs/MOBILE.md).
+
 ## Quick start
 
 ```sh
@@ -61,6 +72,7 @@ node scripts/fetch-net.mjs     # once: downloads the 98 MB NNUE network (verifie
 node tests/run.mjs             # 16 UCI tests against the real wasm build
 node tests/web.mjs             # page assets, server headers, worker protocol
 node tools/bench.mjs           # throughput + node parity
+node tools/profile.mjs         # start-up time, memory, bridge cost (mobile focus)
 node server.mjs              # http://localhost:8080/0.2/web/  -> play in a browser
 ```
 
@@ -106,6 +118,7 @@ official `stockfish` npm package and verifies the hash again.
 ├── engine/               # built wasm + glue, committed so the page runs without a compiler
 ├── tools/match.mjs       # self-play match runner used for tuning
 ├── tools/bench.mjs       # nodes/second + node-parity check of a build
+├── tools/profile.mjs     # start-up, memory and bridge timings
 ├── tools/toolchain/      # scripts that make the npm-hosted Emscripten usable
 ├── tests/run.mjs         # UCI / perft / stop / multi-thread / self-play tests
 ├── cli.mjs               # UCI front end for Node
@@ -131,8 +144,13 @@ official `stockfish` npm package and verifies the hash again.
   compiler. It was produced with the toolchain described in docs/BUILD.md;
   rebuild it if you change anything under `src/` or `patches/`.
 * The engine is single-threaded in practice: `Threads` is 1, because a second
-  search thread in a page competes with the UI and the wasm build gains little
-  from it. `Threads` is a working UCI option if you want to experiment.
+  search thread in a page competes with the UI and the phone's thermal budget,
+  and the wasm build gains little from it. `Threads` is a working UCI option if
+  you want to experiment.
+* Peak memory during start-up is roughly twice the network (98 MB to read it,
+  ~98 MB of weights), because the parser needs the whole file in memory. That is
+  the largest remaining cost, and it is why the network is only read once and
+  freed immediately.
 * No strength claim is made against Stockfish 19 at equal thinking time. The
   tuning matches were too small to resolve small differences, and none of them
   found a large one.

@@ -92,32 +92,22 @@ Three honest caveats:
 
 Two changes are made for playing in a page, and neither is a strength claim:
 
-**Move Overhead is measured, not assumed.** Stockfish stops a `go movetime X`
-search at `X - Move Overhead` and counts on the reserve to cover everything
-else. Natively that is microseconds; in a browser it is a `postMessage`, a task
-hop, a wasm call boundary and sometimes a garbage collection. The page
-(`web/overhead.js`) times every answer, keeps the worst of the last twelve, and
-sets `Move Overhead` to one and a half times that, clamped to 50–500 ms. So the
-reserve adapts to the device: a fast desktop settles near 50 ms, a phone with
-janky scheduling raises it and stops losing on time.
+**The time reserve is measured, not assumed.** Stockfish's `Move Overhead` is
+only used when a search is bounded by a clock (`go wtime … btime …`); a
+`go movetime X` search stops at exactly X, whatever `Move Overhead` says. The
+page sends `movetime`, so it subtracts the reserve itself: `web/overhead.js`
+times every answer, keeps the worst of the last twelve, and
+`searchTime()` requests `budget − reserve` with the reserve clamped to 50–500 ms.
+So a desktop asks for ~950 ms of a 1 s budget and a phone with janky scheduling
+asks for less, instead of overrunning and stuttering. `Move Overhead` is still
+set on the engine so a client that uses clocks (the CLI, UCI integration) gets
+the same protection from Stockfish's own time manager.
 
 **The opening is varied.** A small book (`web/book.js`) plays one of a handful
 of sane first moves for the first six plies, so two games in a row are not the
 same game. It is book *variety*, not book theory: the engine leaves the book as
 soon as the position is not in the (deliberately tiny) table.
 
-### Reproducing any of this
-
-```sh
-# strength numbers
-node 0.2/tools/match.mjs --engine-a /tmp/workbuild/sf --engine-b /tmp/workbuild/sf \
-  --a "Solace Tuning=Stockfish 19" --b "Solace Tuning=Stockfish 19,Solace LMR Scale=115" \
-  --games 120 --movetime 30 --concurrency 2 --json /tmp/tune-lmr115.json
-
-# throughput and node parity of the wasm build
-node 0.2/tools/bench.mjs --variant relaxed --repeat 2
-```
-
-`tools/match.mjs` takes any two UCI engines, so the same command also answers
-"how does this build compare to released Stockfish 19" — with the same caveat
-that 120 games only resolves large differences.
+Playing on a phone also changes how long to search and how much memory to use;
+that is a separate subject with its own measurements — see
+[MOBILE.md](MOBILE.md).

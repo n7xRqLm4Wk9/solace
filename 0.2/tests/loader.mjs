@@ -75,10 +75,54 @@ function stubFactory(log, { ready = 1 } = {}) {
 
 const fakeHeap = new Uint8Array(4096);
 
+/** Stand-in for a build that exports solace_load_net (the mobile path). */
+function memoryStubFactory(log, { loadResult = 1, netSize = NET.length } = {}) {
+  return async (config) => {
+    log.push('factory');
+    config.print('Solace 0.2 by the Stockfish developers\n');
+    return {
+      HEAPU8: fakeHeap,
+      _solace_load_net: (ptr, size) => {
+        const bytes = Array.from(fakeHeap.slice(ptr, ptr + size));
+        log.push(`loadNet:${size}:${bytes.join(',')}`);
+        return loadResult;
+      },
+      callMain: () => log.push('callMain'),
+      _solace_ready: () => 1,
+      _solace_command: () => log.push('command'),
+      _malloc: (size) => {
+        log.push(`malloc:${size}`);
+        return 2048;
+      },
+      _free: () => log.push('free'),
+      stringToUTF8: () => {},
+      lengthBytesUTF8: (str) => Buffer.byteLength(str, 'utf8'),
+    };
+  };
+}
+
 // the loader fetches the network through the global fetch
+/** A Response lookalike: a content-length plus a body that yields NET in two chunks. */
+function fakeResponse(name) {
+  const announced = name.includes('truncated') ? NET.length * 2 : NET.length;
+  const chunks = [NET.slice(0, 3), NET.slice(3)];
+  let i = 0;
+  return {
+    ok: true,
+    headers: { get: () => String(announced) },
+    arrayBuffer: async () => NET.slice().buffer,
+    body: {
+      getReader: () => ({
+        read: async () => (i < chunks.length ? { done: false, value: chunks[i++] } : { done: true }),
+      }),
+    },
+  };
+}
+
 globalThis.fetch = async (url) => {
-  if (String(url).includes('missing')) return { ok: false, status: 404 };
-  return { ok: true, headers: { get: () => String(NET.length) }, arrayBuffer: async () => NET.slice().buffer };
+  const name = String(url);
+  if (name.includes('missing')) return { ok: false, status: 404 };
+  return fakeResponse(name);
 };
 
 console.log('Solace 0.2 — loader tests\n');
@@ -124,6 +168,39 @@ await check('an engine that fails to initialise is reported', async () => {
 
 await check('a missing network fails with a clear message', async () => {
   await assert.rejects(() => createEngine({ createModule: stubFactory([]), netUrl: 'missing' }), /cannot load/);
+});
+
+await check('network goes into the wasm heap and is parsed from memory', async () => {
+  const log = [];
+  const timings = {};
+  const engine = await createEngine({
+    createModule: memoryStubFactory(log),
+    netUrl: 'net',
+    timings,
+  });
+  // No filesystem write at all: the network is buffered in the heap, main()
+  // creates the engine, then the buffer is parsed and released.
+  assert.deepEqual(log, ['factory', 'malloc:5', 'callMain', 'loadNet:5:1,2,3,4,5', 'free']);
+  assert.equal(engine.ready, true);
+  assert.equal(engine.heapSize(), 4096);
+  for (const phase of ['instantiate', 'fetch', 'netCopy', 'netParse', 'main'])
+    assert.equal(typeof timings[phase], 'number', `missing timing ${phase}`);
+});
+
+await check('a network the engine rejects is reported instead of ignored', async () => {
+  await assert.rejects(
+    () => createEngine({ createModule: memoryStubFactory([], { loadResult: 0 }), netUrl: 'net' }),
+    /not a usable NNUE network/,
+  );
+});
+
+await check('a truncated download is rejected, not parsed', async () => {
+  const log = [];
+  await assert.rejects(
+    () => createEngine({ createModule: memoryStubFactory(log), netUrl: 'net-truncated' }),
+    /truncated/,
+  );
+  assert.ok(log.includes('free'), 'the heap buffer has to be released on failure');
 });
 
 await check('parseInfo reads depth, score, nodes and pv', async () => {

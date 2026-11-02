@@ -42,4 +42,18 @@ int solace_ready() {
     return Stockfish::WasmBridge::instance() ? 1 : 0;
 }
 
+// Parses the NNUE network from a buffer that already lives in the WebAssembly
+// heap, so the page never has to write a 98 MB file into the module's virtual
+// filesystem (which would hold a second full copy of it in memory).
+// Returns 1 on success. The buffer can be freed as soon as this returns.
+int solace_load_net(const void* data, int size) {
+    if (!data || size <= 0)
+        return 0;
+
+    if (auto* engine = Stockfish::WasmBridge::instance())
+        return engine->load_network_from_memory(data, static_cast<size_t>(size)) ? 1 : 0;
+
+    return 0;
+}
+
 }  // extern "C"
