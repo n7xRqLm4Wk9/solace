@@ -41,9 +41,10 @@ the identical node count, 1 808 810 for `bench 1`). See
 ## 0003 in practice: what the defaults were set to
 
 The tuning layer exists so the search can be changed without touching upstream
-code, and so every change is measurable. Four scale variants were played against
-`Solace Tuning=Stockfish 19` (120 games each) and **all four measured neutral or
-worse**, the clearest loss being 10 % less pruning at about −50 Elo. The shipped
+code, and so every change is measurable. Six scale variants were played against
+`Solace Tuning=Stockfish 19` (120 games each) and **all six measured worse**, the
+clearest losses being about −50 Elo (10 % less pruning, more history weight,
+half the optimism). The shipped
 preset therefore keeps the upstream numbers; the options are there to keep
 measuring. The full table is in [TUNING.md](TUNING.md).
 

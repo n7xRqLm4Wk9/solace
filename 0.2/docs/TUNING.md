@@ -43,31 +43,36 @@ script also gives an honest "how strong is this really" number.
 
 ### Results
 
-<!-- filled in from the actual runs; see the numbers below -->
-
 Run in this container (2 vCPU), 16 opening lines × colours swapped, 30 ms/move,
 1 thread, hash 16 MB. "A" is always the Stockfish 19 parameter set, "B" the
 variant:
 
-| B (variant) | games | A wins | B wins | draws | score for A | Elo (B − A) |
-|---|---|---|---|---|---|---|
-| `Solace LMR Scale=115` | 120 | 41 | 39 | 40 | 50.83 % | −5.8 |
-| `Solace LMR Scale=85` | 120 | 45 | 40 | 35 | 52.08 % | −14.5 |
-| `Solace Pruning Scale=110` | 120 | 43 | 39 | 38 | 51.67 % | −11.6 |
-| `Solace Pruning Scale=90` | 120 | 47 | 30 | 43 | 57.08 % | −49.6 |
+| B (variant) | games | A wins | B wins | draws | score for A | 95 % for A | Elo (B − A) |
+|---|---|---|---|---|---|---|---|
+| `Solace LMR Scale=115` | 120 | 41 | 39 | 40 | 50.83 % | −49 … +61 | −5.8 |
+| `Solace LMR Scale=85` | 120 | 45 | 40 | 35 | 52.08 % | −43 … +73 | −14.5 |
+| `Solace Pruning Scale=110` | 120 | 43 | 39 | 38 | 51.67 % | −44 … +68 | −11.6 |
+| `Solace Pruning Scale=90` | 120 | 47 | 30 | 43 | 57.08 % | −11 … +110 | −49.6 |
+| `Solace History Scale=115` | 120 | 38 | 29 | 53 | 53.75 % | −36 … +90 | −26.1 |
+| `Solace Optimism Scale=50` | 120 | 44 | 28 | 48 | 56.67 % | −15 … +112 | −46.6 |
 
 Reading the table: with 120 games the 95 % interval is roughly ±50–60 Elo, so
-only large effects are visible. Every variant lost ground, and the one that lost
-clearly — pruning 10 % less — lost about 50 Elo. The measured message is
-therefore negative but useful: **Stockfish 19's search constants are already
-better for this engine at 30 ms/move than the scaled variants tested here**, so
-no search-parameter change is shipped as a default. `Solace 0.2` keeps the
-upstream numbers and the options stay available for further tuning.
+only large effects are visible. **Every one of the six variants lost ground**,
+and the three clearest losses are about −50 Elo each (10 % less pruning, more
+history weight, half the optimism). The measured message is negative but useful:
+at 30 ms/move the Stockfish 19 constants beat every scaled variant tried here,
+so no search-parameter change ships as a default. `Solace 0.2` keeps the upstream
+numbers and the options stay available for further tuning.
 
-Two further variants (`History Scale=115`, `Optimism Scale=50`) were queued and
-never played: with the four completed variants all at or below the baseline, the
-remaining computer time was moved into making the WebAssembly build itself
-correct and faster, which is the part a browser player actually feels.
+The runs also show how noisy this time control is, which is the argument for not
+believing single small results. `Optimism Scale=50` was at 28.6 % for A after
+seven games and finished at 56.7 % — a 28-point swing over 113 games with the
+*same* engines. Any candidate that is decided by a handful of games at 30 ms is
+probably noise, which is why no variant is shipped as an improvement.
+
+The raw results of the last two matches are archived in
+[`results/`](results/) (per game: opening, colours, length, result); the four
+earlier ones survive as the aggregates above.
 
 Three honest caveats:
 

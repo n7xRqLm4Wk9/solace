@@ -42,11 +42,11 @@ drive it from JavaScript:
 7. two SIMD builds are produced and the faster one is chosen at load time
    (`src/config.js`).
 
-The tuning layer was used to play four 120-game matches against the upstream
-constants (LMR ×1.15, LMR ×0.85, pruning ×1.10, pruning ×0.90). **All four
-measured neutral or worse**, so the shipped preset keeps Stockfish's numbers and
-the results are published rather than the losers being quietly dropped — see
-[docs/TUNING.md](docs/TUNING.md).
+The tuning layer was used to play six 120-game matches against the upstream
+constants (LMR ×1.15 and ×0.85, pruning ×1.10 and ×0.90, history ×1.15, half the
+optimism). **All six measured worse**, so the shipped preset keeps Stockfish's
+numbers and every result is published rather than the losers being quietly
+dropped — see [docs/TUNING.md](docs/TUNING.md).
 
 The patches are in [`patches/`](patches) and are listed line by line in
 [docs/MODIFICATIONS.md](docs/MODIFICATIONS.md), as the GPL requires.

@@ -75,9 +75,9 @@ LICENSE         MIT licence of the 0.1.x engine
 * Solace 0.2 moves with Stockfish 19's search and evaluation, so its strength
   is Stockfish's. The work of this project is the WebAssembly port, the JS
   layer, the UCI wiring, the browser UI, a tuning layer with published
-  self-play measurements (which did *not* find a better parameter set, so the
-  upstream values ship), a latency-adaptive time reserve and a small opening
-  book. No stronger-than-Stockfish claim is made anywhere.
+  self-play measurements (six variants tested, all worse than the upstream
+  values, which therefore ship), a latency-adaptive time reserve and a small
+  opening book. No stronger-than-Stockfish claim is made anywhere.
 * The browser build of 0.2 needs `SharedArrayBuffer`, so the page must be served
   with `Cross-Origin-Opener-Policy: same-origin` and
   `Cross-Origin-Embedder-Policy: require-corp` (the included `server.mjs` does
