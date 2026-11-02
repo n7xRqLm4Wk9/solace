@@ -1,0 +1,139 @@
+--- a/src/engine.cpp
++++ b/src/engine.cpp
+@@ -18,6 +18,8 @@
+ 
+ #include "engine.h"
+ 
++#include "solace.h"
++
+ #include <algorithm>
+ #include <cassert>
+ #include <filesystem>
+@@ -108,6 +110,25 @@
+ 
+     options.add("Move Overhead", Option(10, 0, 5000));
+ 
++    // ---- Solace tuning layer -------------------------------------------------
++    // Every scale is a percentage of the Stockfish 19 value; 100 reproduces the
++    // upstream engine exactly. "Solace Tuning" selects a preset tuned by
++    // self-play for the time control Solace actually runs at (see docs/TUNING.md).
++    options.add(
++      "Solace Tuning", Option("Solace 0.2", [](const Option& o) {
++          Solace::Preset preset;
++          if (!Solace::parse_preset(std::string(o), preset))
++              return std::string("Solace Tuning: unknown preset '") + std::string(o)
++                   + "' (use 'Solace 0.2' or 'Stockfish 19')";
++          Solace::apply(preset);
++          return Solace::describe();
++      }));
++
++    options.add("Solace LMR Scale", Option(100, 50, 200));
++    options.add("Solace Pruning Scale", Option(100, 50, 200));
++    options.add("Solace History Scale", Option(100, 50, 200));
++    options.add("Solace Optimism Scale", Option(100, 0, 200));
++
+     options.add("nodestime", Option(0, 0, 10000));
+ 
+     options.add("UCI_Chess960", Option(false));
+@@ -138,6 +159,10 @@
+           return std::nullopt;
+       }));
+ 
++    // Activate Solace's own tuning preset. Selecting "Solace Tuning" restores
++    // the Stockfish 19 values in one step.
++    Solace::apply(Solace::default_preset());
++
+     threads.clear();
+     threads.ensure_network_replicated();
+     resize_threads();
+--- a/src/search.cpp
++++ b/src/search.cpp
+@@ -17,6 +17,7 @@
+ */
+ 
+ #include "search.h"
++#include "solace.h"
+ 
+ #include <algorithm>
+ #include <array>
+@@ -1180,8 +1181,11 @@
+                 // Futility pruning for captures
+                 if (!givesCheck && lmrDepth < 8)
+                 {
+-                    Value futilityValue = ss->staticEval + 234 + 247 * lmrDepth
+-                                        + PieceValue[capturedPiece] + 134 * captHist / 1024;
++                    Value futilityValue =
++                      ss->staticEval
++                      + (234 + 247 * lmrDepth + 134 * captHist / 1024) * Solace::params.pruningScale
++                          / 100
++                      + PieceValue[capturedPiece];
+ 
+                     if (futilityValue <= alpha)
+                         continue;
+@@ -1189,7 +1193,7 @@
+ 
+                 // SEE based pruning for captures and checks.
+                 // Avoid pruning sacrifices of our last piece for stalemate.
+-                int margin = 177 * depth + captHist * 34 / 1024;
++                int margin = (177 * depth + captHist * 34 / 1024) * Solace::params.pruningScale / 100;
+                 if ((alpha >= VALUE_DRAW || pos.non_pawn_material(us) != PieceValue[movedPiece])
+                     && !pos.see_ge(move, -margin))
+                     continue;
+@@ -1208,10 +1212,12 @@
+                 history += 69 * mainHistory[us][move.raw()] / 32;
+ 
+                 // (*Scaler): Generally, lower divisors scale well
+-                lmrDepth += history / lmrDivisor[dIndex];
++                lmrDepth += history / std::max(1, lmrDivisor[dIndex] * Solace::params.historyScale / 100);
+ 
+-                Value futilityValue =
+-                  ss->staticEval + 119 * lmrDepth + 90 * (ss->staticEval > alpha) + 164;
++                const int prunescale = Solace::params.pruningScale;
++                Value     futilityValue =
++                  ss->staticEval
++                  + (119 * lmrDepth + 90 * (ss->staticEval > alpha) + 164) * prunescale / 100;
+ 
+                 // Futility pruning: parent node
+                 // (*Scaler): Generally, more frequent futility pruning scales well
+@@ -1226,7 +1232,7 @@
+                 lmrDepth = std::max(lmrDepth, 0);
+ 
+                 // Prune moves with negative SEE
+-                if (!pos.see_ge(move, -23 * lmrDepth * lmrDepth))
++                if (!pos.see_ge(move, -23 * lmrDepth * lmrDepth * Solace::params.pruningScale / 100))
+                     continue;
+             }
+         }
+@@ -1884,7 +1890,9 @@
+ 
+ int Search::Worker::reduction(bool i, Depth d, int mn, int delta) const {
+     int reductionScale = reductions[d] * reductions[mn];
+-    return reductionScale - delta * 577 / rootDelta + !i * reductionScale * 197 / 512 + 982;
++    int r = reductionScale - delta * 577 / rootDelta + !i * reductionScale * 197 / 512 + 982;
++    // Solace: the amount of reduction is tunable (100 = Stockfish 19).
++    return Solace::params.lmrScale == 100 ? r : r * Solace::params.lmrScale / 100;
+ }
+ 
+ // elapsed() returns the time elapsed since the search started. If the
+--- a/src/evaluate.cpp
++++ b/src/evaluate.cpp
+@@ -18,6 +18,8 @@
+ 
+ #include "evaluate.h"
+ 
++#include "solace.h"
++
+ #include <algorithm>
+ #include <cassert>
+ #include <cmath>
+@@ -51,6 +53,10 @@
+ 
+     Value nnue = psqt + positional;
+ 
++    // Solace: the time-dependent optimism is tunable (100 = Stockfish 19).
++    if (Solace::params.optimismScale != 100)
++        optimism = optimism * Solace::params.optimismScale / 100;
++
+     // Blend optimism and eval with nnue complexity
+     int nnueComplexity = std::abs(psqt - positional);
+     optimism += optimism * i64(nnueComplexity) / 476;
