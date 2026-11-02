@@ -1,6 +1,6 @@
 node_modules/
 *.log
-results/
+/results/
 
 # Solace 0.2 build products
 0.2/scripts/work/
