@@ -1,0 +1,8 @@
+node_modules/
+*.log
+/results/
+
+# Solace 0.2 build products
+0.2/scripts/work/
+0.2/scripts/obj/
+0.2/assets/*.nnue
