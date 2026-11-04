@@ -244,7 +244,26 @@ almost never decisive at the moment the search needs it.
 
 ---
 
-## 6. The plan
+## 6. Results since this assessment (phase 0 + first phase 1 round)
+
+`docs/STRENGTH.md` §8 has the numbers; the summary that changes the plan:
+
+* **Shipped:** two provable no-op speed fixes (repetition scan 85.3 -> 60.7 ns
+  per call, no closure per node), default `Hash` 16 -> 32 MB (-11 % nodes at
+  depth 12), plus the measurement tooling this document asked for:
+  `tools/progress.mjs`, `nodes:N` matches in `tools/ab-match.mjs` with a 95 %
+  interval, and `tests/regression.test.js` (pinned tree size, mate suite,
+  tactical sanity, determinism).
+* **Rejected, with numbers:** aggressive late-move pruning (-163 Elo at equal
+  depth for 31 % fewer nodes), continuation-history ordering (+9 % nodes),
+  SEE-based capture demotion (306 knps vs 376).
+
+The LMP result is the important one: it says the engine's *ordering* is not good
+enough to support sharper pruning, so phase 1 items are reordered below - capture
+and quiet ordering work comes first, and every pruning change is now judged with
+`nodes:N` matches (equal work) *and* `movetime` matches (equal time).
+
+## 7. The plan
 
 Each phase lists the change, the expected benefit (labelled), the risk, and the
 tests that have to pass. **No phase ships without a match result** unless it is a
@@ -273,29 +292,37 @@ Risk: none (tooling only). Tests: the existing 160 must stay green.
 
 Ordered by expected value per hour:
 
-1. **Pruning that actually fires.** Replace `14 + 6·depth` with a threshold in the
-   `(3 + d²)/2` family and extend it in depth; re-check futility (140·depth) and
-   RFP (90·depth) margins against the wider tree this creates. Pilot C′ measured
-   −16 %/−31 % nodes. *Expected*: 20-40 % fewer nodes at equal depth; the risk is
-   strength loss from cutting real moves, which is exactly what the match is for.
-2. **SEE in ordering, not just filtering.** Score captures with SEE
-   (`good capture > quiet > bad capture`) in quiescence first — it is where most
-   nodes are — then in the main search only when the move list is small. *Expected*:
-   10-20 % fewer quiescence nodes; risk is the ~34 ns per SEE call, so it must be
-   measured in nps, not only in nodes.
-3. **Better quiet-move ordering.** Capture history, 1-ply continuation history, and
-   history bonuses scaled by `depth²` instead of the current fixed
-   `min(1600, 32·depth + 64)`. *Expected*: 10-20 % fewer nodes; low risk, purely a
-   reordering, so scores cannot become wrong, only differently ordered.
-4. **Transposition table.** Store the static evaluation, use 2-slot buckets with
-   depth-preferred replacement, raise the default `Hash` to 64 MB (measured 22 %
-   fewer nodes at depth 12; the browser worker can afford 64 MB and the CLI/Android
-   story stays the same). *Expected*: 5-15 %; risk is memory on phones, so the
-   default can stay device-aware.
-5. **Aspiration and re-search policy.** Width by depth and by how stable the
+**Ordering first, pruning second** — this order is now enforced by measurement,
+not by taste (§8.2 of STRENGTH.md: sharper pruning cost 163 Elo with this
+ordering; §8.4: SEE at 34 ns/call is too expensive to sort with).
+
+1. **Quiet-move ordering that fits this engine.** The naive continuation history
+   failed (+9 % nodes, §8.3), so the next attempts are narrower: piece-to history
+   (`[piece][to]`) alongside the existing butterfly table, history bonus scaled by
+   `depth²` instead of the flat `min(1600, 32·depth + 64)`, and a *capture* history
+   for MVV-LVA ties. Each is ordering-only, so it can only change which move is
+   tried first; measure with `nodes:N` matches (equal work) to separate quality
+   from speed.
+2. **Killer/countermove tuning.** Two killers and one countermove are stored; the
+   countermove table uses a single slot per move. Cheap to index by piece and to
+   keep two slots; verify with the same equal-work match.
+3. **Pruning only after ordering improves.** Then retry the `(3 + d²)/2` family,
+   this time with the better ordering, and re-check futility (140·depth) and RFP
+   (90·depth) margins. The 31 % tree reduction is real and is worth having *if*
+   the moves being cut are actually bad — which is exactly what §8.2 says they
+   were not, yet.
+4. **SEE-free capture ordering.** SEE-based demotion was rejected for speed, so
+   use cheaper proxies: attacker value vs victim value bands, and promotion-aware
+   ordering.
+5. **Transposition table.** Store the static evaluation and use 2-slot buckets
+   with depth-preferred replacement; the default `Hash` is now 32 MB (measured
+   16 -> 32 MB is -11 % nodes at depth 12, and 32 -> 64 MB a further -5 %, which is
+   available to desktop users through the option rather than as a new default,
+   because 0.1.5 targets phones first).
+6. **Aspiration and re-search policy.** Width by depth and by how stable the
    previous iterations were, rather than a fixed 25 cp; on a fail, re-search with
    the TT move forced first. *Expected*: small but cheap; risk near zero.
-6. **"Improving" heuristic** for RFP and futility margins. *Expected*: 5-10 %;
+7. **"Improving" heuristic** for RFP and futility margins. *Expected*: 5-10 %;
    needs a match, because it is a pure search-shape change.
 
 Testing: each item is a separate branch with (a) identical-score checks for
@@ -360,7 +387,7 @@ pipeline and tuner it needs are the ones built in phases 0 and 3.
 
 ---
 
-## 7. Measurement protocol (so results mean something)
+## 8. Measurement protocol (so results mean something)
 
 1. **Two kinds of test, never mixed.** *Equal work* (fixed nodes or fixed depth)
    answers "is the search smarter?"; *equal time* (movetime) answers "is it
@@ -379,7 +406,7 @@ pipeline and tuner it needs are the ones built in phases 0 and 3.
 
 ---
 
-## 8. Reproducing the numbers
+## 9. Reproducing the numbers
 
 ```sh
 cd 0.1.5
@@ -406,19 +433,23 @@ lower; the ratios and node counts are what the plan relies on.
 
 ---
 
-## 9. What I need from you before phase 1
+## 10. Decisions taken
 
-The plan above is ordered by expected value, but two choices are yours:
-
-1. **Target.** Is 0.1.5 primarily a *phone* engine (where node cost and memory
-   matter most, and where the browser worker is the main consumer) or a
-   *command-line/GUI* engine (where 64-256 MB of hash is free and aggressive
-   pruning pays)? The first changes phase 1 item 4 and phase 2 priorities.
-2. **Appetite for NNUE.** It is 3-6 weeks of work with an uncertain payoff and it
-   would touch evaluation, make/unmake, the UCI options and the file layout. If
-   that is not wanted, phase 3 (tuning) captures most of the realistic gain and
-   the architecture stays as it is.
-
-Absent an answer, the default is: keep 0.1.5 phone-friendly (default `Hash` stays
-modest and device-aware), do phases 0-2 first, and revisit NNUE only after the
-tuned handcrafted evaluator has been measured properly.
+1. **Target: phone first, desktop where it costs nothing.** Given directly:
+   *"phone friendly/desktop friendly if possible but phone more forward"*. What
+   that means concretely:
+   * the default `Hash` is 32 MB — enough to avoid the 11 % node penalty measured
+     at 16 MB, small enough for a phone tab; desktop users raise it through the
+     option (up to 512 MB);
+   * per-node *time* is the priority over tree size, which is why the aggressive
+     pruning was rejected on quality rather than kept on node count;
+   * the browser worker keeps `Threads`-free single-threaded operation and the
+     evaluation stays allocation-free, so the UI thread and the phone's GC see
+     the same load as before;
+   * nothing introduced may need more than the existing test suite's runtime or
+     any non-Node tool.
+2. **NNUE: deferred, not started.** It stays phase 5 and gated on +30 Elo at
+   95 % over 2 000 games. No code was written for it in this round; the roadmap
+   keeps the analysis so the decision can be revisited once phases 1-3 have
+   been measured. If you want it earlier, say so and it becomes phase 2 —
+   the plan and the gate stay the same either way.

@@ -56,7 +56,7 @@ export class UciEngine {
   constructor(options = {}) {
     this.output = options.output ?? ((line) => console.log(line));
 
-    this.searcher = new Searcher({ hashMB: 16, moveOverhead: 30 });
+    this.searcher = new Searcher({ hashMB: 32, moveOverhead: 30 });
     this.position = new Position();
     this.position.setStartPosition();
     this.positionHistory = [START_FEN];
@@ -70,7 +70,7 @@ export class UciEngine {
     this.debugEcho = false;
     this.applyMovesToPosition = options.applyMovesToPosition ?? false;
     this.options = {
-      Hash: 16,
+      Hash: 32,
       'Move Overhead': 30,
       VerifyMoves: false,
     };
@@ -160,7 +160,7 @@ export class UciEngine {
   cmdUci() {
     this.send(`id name ${ENGINE_NAME} ${ENGINE_VERSION}`);
     this.send(`id author ${ENGINE_AUTHOR}`);
-    this.send('option name Hash type spin default 16 min 1 max 512');
+    this.send('option name Hash type spin default 32 min 1 max 512');
     this.send('option name Move Overhead type spin default 30 min 0 max 5000');
     this.send('option name VerifyMoves type check default false');
     this.send('option name Clear Hash type button');

@@ -10,7 +10,8 @@ It has its own move generation, its own handcrafted evaluation and its own
 search: no Stockfish, no other engine's source, no chess library, no neural
 network and no npm dependencies.
 
-* 160 automated tests, all passing (`node tests/run.js`, ~8 s).
+* 166 automated tests, all passing (`node tests/run.js`, ~12 s), including a
+  regression suite that pins the search tree size and a mate/tactics set.
 * Full UCI: verified over a real child process, not just in-process.
 * Exact perft results up to depth 5 on six standard positions.
 * ~0.35-0.45 M nodes/second search and ~6-7 M nodes/second perft, measured on a laptop.
@@ -26,7 +27,7 @@ You need Node.js 18 or newer. Nothing else - there are no dependencies.
 git clone <this repository> solace
 cd solace
 
-node tests/run.js        # run the test suite (~8 s, 160 tests)
+node tests/run.js        # run the test suite (~12 s, 166 tests)
 node cli.js perft 4      # 197281 nodes
 node cli.js bench 5      # reproducible search benchmark
 node cli.js play         # play against it in the terminal
@@ -176,7 +177,7 @@ All numbers below were produced by actually running the code on this machine
 
 | suite | tests | result |
 | --- | --- | --- |
-| movegen, fen, eval, draw, search, uci, uci-process, tools, web | 160 | **160 passed, 0 failed (~8 s)** |
+| movegen, fen, eval, draw, search, regression, uci, uci-process, tools, web | 166 | **166 passed, 0 failed (~12 s)** |
 
 ### Perft (exact reference counts)
 

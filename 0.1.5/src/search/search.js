@@ -295,31 +295,31 @@ export class Searcher {
     if (inCheck) depth++;
 
     // The static evaluation is only needed for the pruning decisions below, so
-    // it is computed on demand instead of at every node.
+    // it is computed on demand instead of at every node.  (An arrow function
+    // here would allocate a closure per node; `staticEval` is checked instead.)
     let staticEval = -INFINITE;
-    const getStaticEval = () => {
-      if (staticEval === -INFINITE) staticEval = evaluate(position);
-      return staticEval;
-    };
 
     // --- reverse futility (static null move) pruning -----------------------
-    if (!isPV && !inCheck && depth <= 4 && Math.abs(beta) < MATE_THRESHOLD
-      && getStaticEval() - 90 * depth >= beta) {
-      return staticEval;
+    if (!isPV && !inCheck && depth <= 4 && Math.abs(beta) < MATE_THRESHOLD) {
+      staticEval = evaluate(position);
+      if (staticEval - 90 * depth >= beta) return staticEval;
     }
 
     // --- null move pruning -------------------------------------------------
-    if (canNull && !isPV && !inCheck && depth >= 3 && getStaticEval() >= beta
+    if (canNull && !isPV && !inCheck && depth >= 3
       && Math.abs(beta) < MATE_THRESHOLD
       && position.hasNonPawnMaterial(us)) {
-      const reduction = depth > 6 ? 3 : 2;
-      position.makeNullMove();
-      const score = -this.negamax(position, depth - 1 - reduction, -beta, -beta + 1, ply + 1, false);
-      position.unmakeNullMove();
-      if (score >= beta) {
-        this.debugCounters.nullCutoffs++;
-        // A mate score obtained through a null move is not trustworthy.
-        return Math.abs(score) > MATE_THRESHOLD ? beta : score;
+      if (staticEval === -INFINITE) staticEval = evaluate(position);
+      if (staticEval >= beta) {
+        const reduction = depth > 6 ? 3 : 2;
+        position.makeNullMove();
+        const score = -this.negamax(position, depth - 1 - reduction, -beta, -beta + 1, ply + 1, false);
+        position.unmakeNullMove();
+        if (score >= beta) {
+          this.debugCounters.nullCutoffs++;
+          // A mate score obtained through a null move is not trustworthy.
+          return Math.abs(score) > MATE_THRESHOLD ? beta : score;
+        }
       }
     }
 
@@ -368,9 +368,12 @@ export class Searcher {
 
           // Futility pruning: a quiet move that cannot lift the static score to
           // alpha at depth 1-2 is hopeless unless it gives check.
-          if (depth <= 2 && !givesCheck && getStaticEval() + 140 * depth <= alpha) {
-            position.unmakeMove(move);
-            continue;
+          if (depth <= 2 && !givesCheck) {
+            if (staticEval === -INFINITE) staticEval = evaluate(position);
+            if (staticEval + 140 * depth <= alpha) {
+              position.unmakeMove(move);
+              continue;
+            }
           }
 
           // Late move pruning: with many better moves available, the last quiet

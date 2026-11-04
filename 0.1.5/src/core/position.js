@@ -723,7 +723,9 @@ export class Position {
     const keyHi = this.keyHi;
     const window = Math.min(this.halfmove, this.histCount - 1);
     let count = 0;
-    for (let i = 1; i <= window; i++) {
+    // The key includes the side to move, so only positions two plies back can
+    // match; stepping by two halves the work of the most-called draw test.
+    for (let i = 2; i <= window; i += 2) {
       const idx = this.histCount - 1 - i;
       if (idx < 0) break;
       if (this.histLo[idx] === keyLo && this.histHi[idx] === keyHi) count++;

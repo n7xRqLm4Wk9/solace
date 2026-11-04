@@ -19,7 +19,7 @@ Before any strength work, correctness is pinned down by:
 * Zobrist keys recomputed from scratch during long random games and compared
   with the incremental keys,
 * make/unmake round trips that must return the exact starting FEN,
-* 160 automated tests (`node tests/run.js`).
+* 166 automated tests (`node tests/run.js`), including the regression suite.
 
 A speed or strength change is only kept if the full suite still passes.
 
@@ -323,3 +323,83 @@ Ordered by expected gain per hour of work, with the tooling that now exists
 A cumulative **+100 to +150 Elo over 0.1.5** is a realistic target for that work.
 Half of it is likely to come from tuning rather than from new ideas, which is
 what the two rejected experiments suggest.
+
+---
+
+## 8. Search experiments with the new tooling (all measured, one kept)
+
+The tooling added in this round - `tools/progress.mjs` (fixed depth or fixed
+nodes, JSON, baseline diffing) and the equal-work mode of `tools/ab-match.mjs`
+(`nodes:N`) - exists so that "fewer nodes" and "better moves" can be told apart.
+Three candidates were measured; **one class of change was kept, three were
+rejected.** All of them are recorded here with their numbers.
+
+### 8.1 Kept: two provable no-ops
+
+Both changes leave the search tree *bit-identical* (same nodes on every
+reference position, same score, same best move) and only remove work:
+
+| change | evidence | effect |
+| --- | --- | --- |
+| `repetitionCount()` steps back two plies at a time (the key contains the side to move, so only positions two plies back can match) | microbenchmark over a 60-ply history: **85.3 → 60.7 ns/call** | ~1 call per node, so ~1 % of search time |
+| the lazily computed static evaluation no longer allocates an arrow-function closure per node | closure vs direct call: **2.97 → 1.21 ns** | small, free |
+
+Verification: `tools/progress.mjs --depth 10` reports **0.0 % node delta on all
+seven positions**, and the full suite passes.
+
+### 8.2 Rejected: aggressive late-move pruning (-163 Elo)
+
+The existing LMP condition (`legalMoves > 14 + 6*depth`) never fires: extending
+its depth limit from 3 to 5 changed node counts by 1 %. Replacing it with the
+standard formulation (count *quiet moves searched*, threshold `(3 + d^2) / 2`,
+depth <= 6) cut the reference workload by **31 %** (2,352,476 → 1,615,431 nodes
+at depth 10) and still passed all tests - including the mate suite.
+
+The match says the tree reduction was bought with move quality:
+
+```
+A (new LMP) 25 - B (current) 200 = 175 over 400 games at depth 6
+score 28.1 % -> Elo -163 (95 %: -190 .. -138) | illegal 0 | 876 s
+```
+
+That is not a close call: at equal depth the aggressive pruning loses a piece of
+playing strength roughly worth two pawns of search depth. It was **not shipped**,
+and the conclusion is recorded as the single most useful result of this round:
+**ordering must be fixed before pruning can be made sharper**, because pruning
+late moves is only safe when the late moves are actually bad.
+
+### 8.3 Rejected: continuation history ordering (+9 % nodes)
+
+A one-ply continuation history (24 576 entries, `[previous piece][previous
+square] x [to square]`, added to the butterfly history at quarter scale and
+updated by the same gravity rule) is the standard companion to LMR/LMP. On the
+reference workload it *increased* the tree: 2,352,476 → 2,570,490 nodes (+9 %).
+The likely reason is that this ordering is only worth its keep once the search
+uses it together with sharper reductions; on its own, the added term just
+disturbs a working history table. Not shipped.
+
+### 8.4 Rejected: SEE-based demotion of losing captures (slower)
+
+Sorting captures with `SEE < 0` behind the quiet moves (computing SEE only when
+the victim is worth less than the attacker) reduced the tree slightly against
+baseline but not against the LMP candidate, and cost a lot of speed: **306 knps
+vs 376 knps** on the same workload. SEE at ~34 ns per call, ~1.5 calls per node,
+is simply too expensive to use for ordering in a JavaScript engine at this
+speed. Not shipped.
+
+### 8.5 Configuration: default `Hash` 16 MB -> 32 MB
+
+Not a search change, but a measured one. At depth 12 on two middlegame
+positions: 16 MB 3,035,228 nodes, 32 MB 2,697,815 (**-11 %**), 64 MB 2,563,364
+(-16 %). 32 MB is the new UCI default - it matches what the CLI and the browser
+worker already used, and it is still affordable on a phone. Users with more
+memory can raise it; the option range is unchanged (1-512 MB).
+
+### 8.6 What this implies for the next round
+
+The order of work in `docs/ROADMAP.md` changes because of 6.2: better *move
+ordering* has to come before sharper pruning. Concretely, the next candidates
+are (a) ordering that is known to work with this engine's history table, tried
+one at a time and measured with `nodes:N` matches so that quality is separated
+from speed, and (b) evaluation tuning, which does not touch the tree shape at
+all and therefore cannot be harmed by any of the above.

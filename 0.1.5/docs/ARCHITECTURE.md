@@ -31,7 +31,7 @@ engine source code and no third-party chess logic is used.
 │       ├── bench.js          reproducible benchmark suite
 │       ├── selfplay.js       in-process self-play with legality checking
 │       └── match.js          UCI process-vs-process match runner
-├── tests/                    dependency-free test suite
+├── tests/                    dependency-free test suite (+ regression guard)
 ├── web/                      browser UI (engine runs in a Web Worker)
 ├── tools/
 │   ├── gen-magics.js         offline magic-number search (reproducible)
@@ -129,7 +129,8 @@ sign exactly.
   with delta pruning and static exchange pruning,
 * null-move pruning, reverse futility pruning, futility pruning, late move
   reductions with re-search, late move pruning and check extensions,
-* draw detection inside the tree (fifty-move, repetition, insufficient material),
+* draw detection inside the tree (fifty-move, repetition - scanned two plies at a
+  time, because the key contains the side to move - insufficient material),
 * mate-distance pruning and mate score correction in the transposition table,
 * aspiration windows,
 * soft/hard time limits, node limits, and cooperative cancellation (`stop`).
@@ -168,7 +169,7 @@ requires); `debug on` makes them visible and echoes the position after every
 `position` command. `searchmoves` filters the root move list inside
 `SearchSession`, so the search itself is unaware of the protocol.
 
-Options: `Hash` (1-512 MB, default 16), `Move Overhead` (default 30 ms),
+Options: `Hash` (1-512 MB, default 32), `Move Overhead` (default 30 ms),
 `VerifyMoves` (default off), `Clear Hash` (button).
 
 Known UCI limitations: no MultiPV, and pondering is approximated (a `go ponder`

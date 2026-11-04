@@ -11,10 +11,12 @@
  *   node tools/ab-match.mjs <candidate-root> <baseline-root> <games> <tc>
  *
  *   node tools/ab-match.mjs . /tmp/solace-0.1.4 200 depth:5
+ *   node tools/ab-match.mjs . /tmp/solace-0.1.4 200 nodes:50000
  *   node tools/ab-match.mjs . /tmp/solace-0.1.4 200 movetime:100
  *
- * ``tc`` is either ``depth:N`` (fixed depth, measures quality at equal depth)
- * or ``movetime:N`` (milliseconds per move, measures playing strength).
+ * ``tc`` is ``depth:N`` (fixed depth), ``nodes:N`` (fixed node budget - the
+ * "equal work" control, which separates search quality from raw speed) or
+ * ``movetime:N`` (milliseconds per move, which is how a game is really played).
  *
  * The game is adjudicated by the rules only - checkmate, stalemate, fifty-move
  * rule, insufficient material, threefold repetition - never by evaluation, so a
@@ -31,14 +33,20 @@
 
 const [aRoot, bRoot, gamesArg, tcArg] = process.argv.slice(2);
 if (!aRoot || !bRoot) {
-  console.error('usage: node tools/ab-match.mjs <candidate-root> <baseline-root> [games] [depth:N|movetime:N]');
+  console.error('usage: node tools/ab-match.mjs <candidate-root> <baseline-root> [games] [depth:N|nodes:N|movetime:N]');
   process.exit(2);
 }
 const games = Number(gamesArg ?? 24);
 const tc = tcArg ?? 'depth:6';
-const limits = tc.startsWith('depth:')
-  ? { depth: Number(tc.split(':')[1]) }
-  : { movetime: Number(tc.split(':')[1]) };
+const tcKind = tc.split(':')[0];
+const tcValue = Number(tc.split(':')[1]);
+if (!['depth', 'nodes', 'movetime'].includes(tcKind) || !(tcValue > 0)) {
+  console.error(`unsupported time control '${tc}' (use depth:N, nodes:N or movetime:N)`);
+  process.exit(2);
+}
+// nodes:N is the "equal work" control: both sides get the same node budget, so
+// a tree reduction shows up as a better move rather than as a faster search.
+const limits = { [tcKind]: tcValue };
 
 // Candidate (A) and baseline (B).  Each module set is loaded from its own tree.
 const A = {
@@ -104,8 +112,26 @@ for (let game = 0; game < games; game++) {
 
 const score = wins + draws / 2;
 const rate = score / games;
-const elo = rate === 0 ? '-inf' : rate === 1 ? '+inf' : (-400 * Math.log10(1 / rate - 1)).toFixed(0);
+// Elo difference implied by a score rate (logistic model).
+const toElo = (r) => (r <= 0 ? -Infinity : r >= 1 ? Infinity : -400 * Math.log10(1 / r - 1));
+const elo = toElo(rate);
+
+// Standard error of the score rate from the per-game results (a win is 1, a
+// draw 0.5, a loss 0), then a 95 % interval converted back to Elo.
+const variance = (wins * (1 - rate) ** 2 + losses * (0 - rate) ** 2 + draws * (0.5 - rate) ** 2)
+  / Math.max(1, games - 1);
+const stderr = Math.sqrt(variance / games);
+const lo = Math.max(1e-6, rate - 1.96 * stderr);
+const hi = Math.min(1 - 1e-6, rate + 1.96 * stderr);
+const eloLo = toElo(lo);
+const eloHi = toElo(hi);
+
+const fmt = (v) => (Number.isFinite(v) ? `${v > 0 ? '+' : ''}${v.toFixed(0)}` : `${v > 0 ? '+' : '-'}inf`);
 console.log(
-  `A ${wins} - B ${losses} = ${draws} | score ${score}/${games} (${(rate * 100).toFixed(1)}%) `
-  + `| ~${elo} Elo | illegal ${illegal} | ${((Date.now() - started) / 1000).toFixed(0)}s`,
+  `A ${wins} - B ${losses} = ${draws} | score ${score}/${games} (${(rate * 100).toFixed(1)} %) `
+  + `| Elo ${fmt(elo)} (95 %: ${fmt(eloLo)} .. ${fmt(eloHi)}) `
+  + `| illegal ${illegal} | ${((Date.now() - started) / 1000).toFixed(0)}s`,
 );
+if (eloLo > 0) console.log('verdict: A is better at 95 % confidence');
+else if (eloHi < 0) console.log('verdict: A is worse at 95 % confidence');
+else console.log(`verdict: inconclusive - ${games} games cannot separate these builds`);

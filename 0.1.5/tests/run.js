@@ -19,6 +19,7 @@ const suites = [
   ['eval', './eval.test.js'],
   ['draw', './draw.test.js'],
   ['search', './search.test.js'],
+  ['regression', './regression.test.js'],
   ['uci', './uci.test.js'],
   ['uci-process', './uci-process.test.js'],
   ['tools', './tools.test.js'],
