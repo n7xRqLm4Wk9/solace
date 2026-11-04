@@ -284,12 +284,15 @@ src/tools/              bench, selfplay, match, openings
 tests/                  dependency-free test suite (harness + 8 suites)
 web/                    browser UI (HTML/CSS, app.js, engine Web Worker)
 tools/                  gen-magics.js, serve.js
-docs/                   ARCHITECTURE.md, INTEGRATION.md, STRENGTH.md, ANDROID.md
+docs/                   ARCHITECTURE.md, INTEGRATION.md, STRENGTH.md, ANDROID.md,
+                        ROADMAP.md (measured assessment + prioritised plan)
 ```
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains the board representation,
 the move generator, the evaluation terms, the search and the UCI layer in more
 detail, including why the representation was chosen.
+[docs/ROADMAP.md](docs/ROADMAP.md) is the measured assessment of where the engine
+spends its time today and the prioritised plan for making it stronger.
 
 ---
 
