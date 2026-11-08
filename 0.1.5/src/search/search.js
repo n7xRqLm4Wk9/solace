@@ -117,6 +117,21 @@ export class Searcher {
     this.rootMoves = new MoveList(256);
     this.rootBestMove = 0;
     this.debugCounters = { ttHits: 0, nullCutoffs: 0, lmReductions: 0 };
+    /**
+     * Optional search diagnostics (off by default, ~0.5 % of node time when on).
+     * They answer questions a node count cannot: where in the ordered move list
+     * do cutoffs happen, and how much of the tree is all-nodes (where every move
+     * must be searched and ordering cannot help).
+     * See tools/ordering-report.mjs.
+     */
+    this.collectDiag = Boolean(options.diagnostics);
+    this.diag = this.collectDiag ? {
+      cutIndex: new Int32Array(64),
+      cutoffs: 0,
+      internalNodes: 0,
+      allNodes: 0,
+      movesInAllNodes: 0,
+    } : null;
   }
 
   /** Ask a running search to stop (UCI "stop" or "quit"). */
@@ -136,6 +151,20 @@ export class Searcher {
     this.pv = [];
     this.pvScore = 0;
     this.debugCounters = { ttHits: 0, nullCutoffs: 0, lmReductions: 0 };
+    /**
+     * Optional search diagnostics (off by default, ~0.5 % of node time when on).
+     * They answer questions a node count cannot: where in the ordered move list
+     * do cutoffs happen, and how much of the tree is all-nodes (where every move
+     * must be searched and ordering cannot help).
+     * See tools/ordering-report.mjs.
+     */
+    if (this.diag !== null) {
+      this.diag.cutIndex.fill(0);
+      this.diag.cutoffs = 0;
+      this.diag.internalNodes = 0;
+      this.diag.allNodes = 0;
+      this.diag.movesInAllNodes = 0;
+    }
   }
 
   setHashSize(mb) {
@@ -432,6 +461,10 @@ export class Searcher {
       }
 
       if (alpha >= beta) {
+        if (this.diag !== null) {
+          this.diag.cutIndex[i < 63 ? i : 63]++;
+          this.diag.cutoffs++;
+        }
         if (quiet) {
           if (this.killer1[ply] !== move) {
             this.killer2[ply] = this.killer1[ply];
@@ -451,6 +484,14 @@ export class Searcher {
           }
         }
         break;
+      }
+    }
+
+    if (this.diag !== null) {
+      this.diag.internalNodes++;
+      if (bestScore <= originalAlpha) {
+        this.diag.allNodes++;
+        this.diag.movesInAllNodes += legalMoves;
       }
     }
 

@@ -169,6 +169,12 @@ requires); `debug on` makes them visible and echoes the position after every
 `position` command. `searchmoves` filters the root move list inside
 `SearchSession`, so the search itself is unaware of the protocol.
 
+The `Searcher` constructor also takes `diagnostics: true`, which counts beta
+cutoffs by their index in the ordered move list and the share of all-nodes; it
+changes nothing about the search (verified by a test) and costs nothing measurable
+(min-of-five 7,356 ms with vs 7,316 ms without on the depth-10 workload).
+`tools/ordering-report.mjs` reads those counters.
+
 Options: `Hash` (1-512 MB, default 32), `Move Overhead` (default 30 ms),
 `VerifyMoves` (default off), `Clear Hash` (button).
 

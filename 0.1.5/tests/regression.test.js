@@ -114,3 +114,29 @@ test('the search stays deterministic across pruning changes', () => {
   };
   assertEqual(run(), run(), 'two identical searches agree exactly');
 });
+
+test('search diagnostics are off by default and count consistently when on', () => {
+  const plain = new Searcher({ hashMB: 16 });
+  plain.go(createPosition(FENS.italian), { depth: 6 });
+  assertEqual(plain.diag, null, 'no diagnostics unless asked for');
+
+  const searcher = new Searcher({ hashMB: 16, diagnostics: true });
+  const result = searcher.go(createPosition(FENS.italian), { depth: 6 });
+  const diag = searcher.diag;
+  assert(diag !== null, 'diagnostics object exists when enabled');
+  assert(diag.internalNodes > 0, 'counted internal nodes');
+  assert(diag.cutoffs > 0, 'counted beta cutoffs');
+  assert(diag.allNodes <= diag.internalNodes, 'all-nodes are a subset of internal nodes');
+  assert(diag.movesInAllNodes >= diag.allNodes, 'each all-node searched at least one move');
+  const totalCuts = diag.cutIndex.reduce((a, b) => a + b, 0);
+  assertEqual(totalCuts, diag.cutoffs, 'the histogram sums to the cutoff count');
+  assert(diag.cutoffs <= result.nodes, 'a node cannot produce more than one cutoff');
+});
+
+test('diagnostics do not change the search result', () => {
+  const run = (diagnostics) => {
+    const r = new Searcher({ hashMB: 32, diagnostics }).go(createPosition(FENS.kiwipete), { depth: 8 });
+    return `${r.bestMove}|${r.nodes}|${r.score}`;
+  };
+  assertEqual(run(false), run(true), 'same move, same node count, same score');
+});

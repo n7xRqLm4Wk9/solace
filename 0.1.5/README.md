@@ -10,7 +10,7 @@ It has its own move generation, its own handcrafted evaluation and its own
 search: no Stockfish, no other engine's source, no chess library, no neural
 network and no npm dependencies.
 
-* 166 automated tests, all passing (`node tests/run.js`, ~12 s), including a
+* 168 automated tests, all passing (`node tests/run.js`, ~13 s), including a
   regression suite that pins the search tree size and a mate/tactics set.
 * Full UCI: verified over a real child process, not just in-process.
 * Exact perft results up to depth 5 on six standard positions.
@@ -27,7 +27,7 @@ You need Node.js 18 or newer. Nothing else - there are no dependencies.
 git clone <this repository> solace
 cd solace
 
-node tests/run.js        # run the test suite (~12 s, 166 tests)
+node tests/run.js        # run the test suite (~13 s, 168 tests)
 node cli.js perft 4      # 197281 nodes
 node cli.js bench 5      # reproducible search benchmark
 node cli.js play         # play against it in the terminal
@@ -177,7 +177,7 @@ All numbers below were produced by actually running the code on this machine
 
 | suite | tests | result |
 | --- | --- | --- |
-| movegen, fen, eval, draw, search, regression, uci, uci-process, tools, web | 166 | **166 passed, 0 failed (~12 s)** |
+| movegen, fen, eval, draw, search, regression, uci, uci-process, tools, web | 168 | **168 passed, 0 failed (~13 s)** |
 
 ### Perft (exact reference counts)
 
@@ -284,7 +284,7 @@ src/uci/                UCI protocol handler
 src/tools/              bench, selfplay, match, openings
 tests/                  dependency-free test suite (harness + 8 suites)
 web/                    browser UI (HTML/CSS, app.js, engine Web Worker)
-tools/                  gen-magics.js, serve.js
+tools/                  gen-magics.js, serve.js, progress.mjs, ordering-report.mjs
 docs/                   ARCHITECTURE.md, INTEGRATION.md, STRENGTH.md, ANDROID.md,
                         ROADMAP.md (measured assessment + prioritised plan)
 ```

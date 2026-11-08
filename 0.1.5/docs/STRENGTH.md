@@ -403,3 +403,100 @@ are (a) ordering that is known to work with this engine's history table, tried
 one at a time and measured with `nodes:N` matches so that quality is separated
 from speed, and (b) evaluation tuning, which does not touch the tree shape at
 all and therefore cannot be harmed by any of the above.
+
+---
+
+## 9. Move-ordering experiments: eight candidates, two equal-node matches
+
+After the pruning result in §8.2 (-163 Elo for 31 % fewer nodes) the working
+hypothesis was "the ordering is too weak, fix it first". This round tested that
+hypothesis directly. **It is false: the ordering is already at a local optimum,
+and every standard improvement made it worse.**
+
+Method: each candidate was first screened on the fixed depth-10 workload
+(`tools/progress.mjs`, 7 positions, 2,352,476 nodes), then the two candidates
+that looked least bad were played against the current build at **equal nodes**
+(`nodes:15000`, 240 games, paired openings, colours swapped), so that a speed
+difference cannot flatter either side.
+
+### 9.1 Screening (depth 10, identical positions)
+
+| candidate | what changed | nodes | vs baseline |
+| --- | --- | --- | --- |
+| — | baseline | 2,352,476 | — |
+| A | history indexed by **piece-to** instead of from-to | 2,339,351 | **-0.6 %** |
+| B | history bonus scaled by **depth²** instead of depth | 2,456,787 | +4.4 % |
+| C | **continuation history** at 1/16 weight (the full-weight version was §8.3) | 2,511,773 | +6.8 % |
+| D | **capture history** refining MVV-LVA ties | 2,367,174 | +0.6 % |
+| E | **history malus** for quiets that failed to raise alpha | 2,976,907 | +26.6 % |
+| F | **history aging** (halve between searches) | 2,352,476 | 0.0 %* |
+| G | piece-to **and** from-to combined | 2,339,351 | -0.6 % |
+| H | history scaled so it can **outrank killers** | 2,462,783 | +4.7 % |
+
+\* F is invisible to a single-search benchmark: a fresh `Searcher` starts with an
+empty history, so the aging only matters across the moves of a real game. It was
+therefore taken to a match.
+
+Only two candidates reduced the tree at all, and by 0.6 % - inside the noise of a
+7-position benchmark.
+
+### 9.2 Equal-node matches (240 games each, `nodes:15000`)
+
+| candidate | score | Elo | 95 % interval | verdict |
+| --- | --- | --- | --- | --- |
+| A piece-to history | 97.5/240 (40.6 %) | **-66** | -104 .. -30 | worse, reject |
+| F history aging | 105/240 (43.8 %) | **-44** | -83 .. -6 | worse, reject |
+
+Both changes that looked neutral-or-better on node counts are **significantly
+worse in play**. This is the second time this round that node counts and playing
+strength disagreed (§8.2 was the first), and it is the strongest argument for the
+equal-node protocol: at equal nodes, a wrong ordering costs depth *and* moves.
+
+### 9.3 Why: `tools/ordering-report.mjs`
+
+A new instrument (shipped with this round) measures the two things that decide
+whether ordering work can pay at all:
+
+```
+$ node tools/ordering-report.mjs
+where cutoffs happen:
+  move # 0   76.8 %   cumulative 76.8 %
+  move # 1   10.0 %   cumulative 86.8 %
+  move # 2    5.4 %   cumulative 92.2 %
+  move # 3    3.1 %   cumulative 95.3 %
+  move #10+   0.8 %
+tree shape:
+  internal nodes              227,252
+  all-nodes (no cutoff)        66,619  (29.3 % of internal nodes)
+  moves searched per all-node    32.3
+  TT cutoffs                    3.7 % of nodes
+```
+
+Three conclusions, each of which rules out a line of work:
+
+1. **Ordering has little headroom.** 92 % of cutoffs happen within the first
+   three moves. The remaining 8 % is what candidates A-H were competing for, and
+   none of them won it.
+2. **Most of the tree is all-nodes.** 29 % of internal nodes are positions where
+   *no* move produces a cutoff and every move must be searched - 32 moves each.
+   This is exactly where the rejected late-move pruning (§8.2) did its damage: it
+   was not skipping doomed moves in cut-nodes, it was removing the defences of
+   all-nodes. The same number explains why the aggressive LMP lost 163 Elo while
+   cutting 31 % of the nodes.
+3. **The transposition table is under-used** (3.7 % of nodes end in a TT cutoff),
+   which is consistent with §8.5: raising `Hash` from 16 to 32 MB removed 11 % of
+   the nodes at depth 12.
+
+### 9.4 What this changes
+
+* Ordering work is **closed for now**: eight candidates, two matches, no gain.
+  The next ordering idea would need the rest of the modern stack (singular
+  extensions, SEE pruning, two-slot TT buckets) to have something to attach to,
+  and that is a much bigger change than this round's budget.
+* The pruning retry, when it happens, must include the guards this engine's
+  implementation lacked: never prune when the node is already failing low
+  (`bestScore <= alpha` from a null-window), never in a position with a mate
+  score in flight, and never before a minimum number of *quiet* moves have been
+  searched. Those are the conditions under which the 163 Elo was lost.
+* **Evaluation tuning is now the highest-return target** that does not depend on
+  the tree shape at all - which is why it can proceed in parallel, as agreed.

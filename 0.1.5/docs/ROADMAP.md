@@ -244,7 +244,7 @@ almost never decisive at the moment the search needs it.
 
 ---
 
-## 6. Results since this assessment (phase 0 + first phase 1 round)
+## 6. Results since this assessment (phase 0, first phase 1 round, ordering round)
 
 `docs/STRENGTH.md` §8 has the numbers; the summary that changes the plan:
 
@@ -263,6 +263,24 @@ enough to support sharper pruning, so phase 1 items are reordered below - captur
 and quiet ordering work comes first, and every pruning change is now judged with
 `nodes:N` matches (equal work) *and* `movetime` matches (equal time).
 
+**Follow-up round: the ordering hypothesis was tested and rejected** (STRENGTH.md
+§9). Eight ordering candidates - piece-to history, depth-squared history bonus,
+mild continuation history, capture history, history malus, history aging,
+piece-to + from-to, history allowed to outrank killers - were screened on the
+depth-10 workload. Seven grew the tree (by 0.6 % to 26.6 %); the two best were
+then played at **equal nodes** over 240 games each and both lost: piece-to
+**-66 Elo** (95 %: -104..-30), history aging **-44 Elo** (95 %: -83..-6).
+
+`tools/ordering-report.mjs` (new) explains why: 92 % of beta cutoffs already
+happen within the first three moves, so there is almost nothing left for ordering
+to win, while 29 % of internal nodes are all-nodes that search 32 moves each.
+That is also the real reason the aggressive LMP cost 163 Elo: it was removing the
+defences of all-nodes, not skipping doomed moves in cut-nodes.
+
+Consequences, applied below: **ordering work is closed for now**, pruning is
+deferred until it can be guarded properly, and **evaluation work moves to the
+front**.
+
 ## 7. The plan
 
 Each phase lists the change, the expected benefit (labelled), the risk, and the
@@ -277,6 +295,9 @@ honestly, and the current tooling cannot.
 1. `tools/progress.mjs` — fixed-node and fixed-depth runs over the benchmark
    positions, printing nodes, time, nps and the score of each position, with
    `--json`. Written to `docs/results/` so numbers are comparable over time.
+   Done, plus `tools/ordering-report.mjs`, which measures cutoff distribution and
+   the all-node share - the two numbers that decide whether ordering or pruning
+   work can pay at all.
 2. `tools/ab-match.mjs` — add `--nodes N` (equal-work matches, so search quality
    is measured without a speed advantage), `--resume`, and a sequential
    likelihood-ratio report (H0: 0 Elo, H1: +5 Elo, α = β = 0.05) alongside the
@@ -292,37 +313,35 @@ Risk: none (tooling only). Tests: the existing 160 must stay green.
 
 Ordered by expected value per hour:
 
-**Ordering first, pruning second** — this order is now enforced by measurement,
-not by taste (§8.2 of STRENGTH.md: sharper pruning cost 163 Elo with this
-ordering; §8.4: SEE at 34 ns/call is too expensive to sort with).
+**Ordering: closed.** Eight candidates, two equal-node matches, no gain (§6 above
+and STRENGTH.md §9). Do not re-open this until the search has the pieces that
+make modern ordering pay (two-slot TT buckets, SEE pruning, singular
+extensions) - adding the ordering heuristics on their own measurably loses.
 
-1. **Quiet-move ordering that fits this engine.** The naive continuation history
-   failed (+9 % nodes, §8.3), so the next attempts are narrower: piece-to history
-   (`[piece][to]`) alongside the existing butterfly table, history bonus scaled by
-   `depth²` instead of the flat `min(1600, 32·depth + 64)`, and a *capture* history
-   for MVV-LVA ties. Each is ordering-only, so it can only change which move is
-   tried first; measure with `nodes:N` matches (equal work) to separate quality
-   from speed.
-2. **Killer/countermove tuning.** Two killers and one countermove are stored; the
-   countermove table uses a single slot per move. Cheap to index by piece and to
-   keep two slots; verify with the same equal-work match.
-3. **Pruning only after ordering improves.** Then retry the `(3 + d²)/2` family,
-   this time with the better ordering, and re-check futility (140·depth) and RFP
-   (90·depth) margins. The 31 % tree reduction is real and is worth having *if*
-   the moves being cut are actually bad — which is exactly what §8.2 says they
-   were not, yet.
-4. **SEE-free capture ordering.** SEE-based demotion was rejected for speed, so
-   use cheaper proxies: attacker value vs victim value bands, and promotion-aware
-   ordering.
-5. **Transposition table.** Store the static evaluation and use 2-slot buckets
+**Pruning: deferred, with a specification.** When it is retried, the guarded
+version must satisfy all of these, each of which was missing from the version
+that lost 163 Elo:
+* never prune when the node is already failing low (no cut has been found yet
+  and `beta - alpha == 1`), because that is exactly the all-node case that owns
+  29 % of the tree;
+* never prune when a mate score is in flight (`|bestScore| >= MATE_THRESHOLD`);
+* count *quiet* moves searched, not legal moves, and require at least a handful
+  before the first cut;
+* exclude moves that give check (already done) and promotions (already done);
+* validate with `nodes:N` at two budgets *and* `movetime` - the two disagree
+  often enough to matter (§8.2, §9.2).
+
+Then the remaining phase 1 items stand:
+
+1. **Transposition table.** Store the static evaluation and use 2-slot buckets
    with depth-preferred replacement; the default `Hash` is now 32 MB (measured
    16 -> 32 MB is -11 % nodes at depth 12, and 32 -> 64 MB a further -5 %, which is
    available to desktop users through the option rather than as a new default,
    because 0.1.5 targets phones first).
-6. **Aspiration and re-search policy.** Width by depth and by how stable the
+2. **Aspiration and re-search policy.** Width by depth and by how stable the
    previous iterations were, rather than a fixed 25 cp; on a fail, re-search with
    the TT move forced first. *Expected*: small but cheap; risk near zero.
-7. **"Improving" heuristic** for RFP and futility margins. *Expected*: 5-10 %;
+3. **"Improving" heuristic** for RFP and futility margins. *Expected*: 5-10 %;
    needs a match, because it is a pure search-shape change.
 
 Testing: each item is a separate branch with (a) identical-score checks for
@@ -416,8 +435,9 @@ node tests/run.js                     # 160 tests
 node cli.js perft 5                   # 4865609 nodes
 node cli.js bench 6                   # 12 positions, fixed depth
 
-# the fixed workload used in §5 (3 positions, depth 10, fresh TT each)
-node tools/progress.mjs --depth 10    # (phase 0 deliverable)
+# the fixed workload used in §5 and §9 (7 positions, fresh TT each)
+node tools/progress.mjs --depth 10
+node tools/ordering-report.mjs        # cutoff distribution and all-node share
 
 # profiles
 node --cpu-prof tools/progress.mjs --depth 10
