@@ -1,0 +1,157 @@
+{
+  "tool": "progress",
+  "root": "/home/user/solace/0.1.5",
+  "limits": {
+    "depth": 10
+  },
+  "hashMB": 64,
+  "totalMs": 5713,
+  "totals": {
+    "nodes": 2352476,
+    "qnodes": 1467567,
+    "ms": 5432.4,
+    "knps": 433
+  },
+  "positions": [
+    {
+      "name": "startpos",
+      "depth": 10,
+      "seldepth": 21,
+      "nodes": 226117,
+      "qnodes": 150029,
+      "ms": 732.7,
+      "knps": 309,
+      "score": 36,
+      "mate": null,
+      "bestmove": "d2d4",
+      "pv": [
+        "d2d4",
+        "d7d5",
+        "b1c3",
+        "b8c6",
+        "c1f4",
+        "e7e6"
+      ]
+    },
+    {
+      "name": "italian",
+      "depth": 10,
+      "seldepth": 21,
+      "nodes": 446475,
+      "qnodes": 275787,
+      "ms": 1221.7,
+      "knps": 365,
+      "score": 57,
+      "mate": null,
+      "bestmove": "c3d5",
+      "pv": [
+        "c3d5",
+        "h7h6",
+        "c2c3",
+        "d7d6",
+        "d3d4",
+        "c5b6"
+      ]
+    },
+    {
+      "name": "kiwipete",
+      "depth": 10,
+      "seldepth": 32,
+      "nodes": 897602,
+      "qnodes": 601053,
+      "ms": 1822.3,
+      "knps": 493,
+      "score": -87,
+      "mate": null,
+      "bestmove": "e2a6",
+      "pv": [
+        "e2a6",
+        "e6d5",
+        "c3d5",
+        "b6d5",
+        "a6b7",
+        "e7e5"
+      ]
+    },
+    {
+      "name": "closed",
+      "depth": 10,
+      "seldepth": 23,
+      "nodes": 184660,
+      "qnodes": 85651,
+      "ms": 419.5,
+      "knps": 440,
+      "score": 117,
+      "mate": null,
+      "bestmove": "c3d5",
+      "pv": [
+        "c3d5",
+        "e7d8",
+        "c2c3",
+        "b7b5",
+        "c4a2",
+        "f8e8"
+      ]
+    },
+    {
+      "name": "tactical",
+      "depth": 10,
+      "seldepth": 24,
+      "nodes": 461754,
+      "qnodes": 273711,
+      "ms": 996.6,
+      "knps": 463,
+      "score": 307,
+      "mate": null,
+      "bestmove": "c1g5",
+      "pv": [
+        "c1g5",
+        "c5e7",
+        "c4b5",
+        "c8d7",
+        "g5f6",
+        "e7f6"
+      ]
+    },
+    {
+      "name": "endgame",
+      "depth": 10,
+      "seldepth": 17,
+      "nodes": 60031,
+      "qnodes": 36518,
+      "ms": 74.9,
+      "knps": 802,
+      "score": 63,
+      "mate": null,
+      "bestmove": "b4f4",
+      "pv": [
+        "b4f4",
+        "h4g3",
+        "f4c4",
+        "h5h7",
+        "c4c3",
+        "g3g2"
+      ]
+    },
+    {
+      "name": "rook-endgame",
+      "depth": 10,
+      "seldepth": 17,
+      "nodes": 75837,
+      "qnodes": 44818,
+      "ms": 164.7,
+      "knps": 460,
+      "score": 285,
+      "mate": null,
+      "bestmove": "c1c7",
+      "pv": [
+        "c1c7",
+        "a2b2",
+        "c7c5",
+        "d8d7",
+        "b8a7",
+        "b2a2"
+      ]
+    }
+  ]
+}

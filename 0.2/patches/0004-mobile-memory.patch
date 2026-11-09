@@ -1,0 +1,104 @@
+--- a/src/nnue/network.h	2026-11-02 14:07:11.712479047 +0000
++++ b/src/nnue/network.h	2026-11-02 14:10:40.922473777 +0000
+@@ -81,6 +81,14 @@
+     void load_external(const std::filesystem::path&, const std::filesystem::path&, EvalFile&);
+     void load_internal(EvalFile&);
+ 
++#ifdef SOLACE_WASM
++    // Solace: parse the network straight out of a caller-owned buffer (the
++    // WebAssembly heap) instead of a file. In a browser the file would have to
++    // exist in the in-memory filesystem, which doubles the 98 MB network for no
++    // reason. Returns false if the buffer is not a network we can read.
++    bool load_from_memory(const void* data, usize size, EvalFile& evalFile);
++#endif
++
+    private:
+     void initialize();
+ 
+--- a/src/nnue/network.cpp	2026-11-02 14:07:11.712479047 +0000
++++ b/src/nnue/network.cpp	2026-11-02 14:10:40.922473777 +0000
+@@ -269,6 +269,32 @@
+ }
+ 
+ 
++#ifdef SOLACE_WASM
++bool Network::load_from_memory(const void* data, usize size, EvalFile& evalFile) {
++    if (!data || size == 0)
++        return false;
++
++    // Same trick as load_internal(): a streambuf over memory, so nothing is
++    // copied and no file has to exist.
++    class MemoryBuffer: public std::basic_streambuf<char> {
++       public:
++        MemoryBuffer(char* p, usize n) { setg(p, p, p + n); setp(p, p + n); }
++    };
++
++    MemoryBuffer buffer(const_cast<char*>(reinterpret_cast<const char*>(data)), size);
++    std::istream stream(&buffer);
++
++    auto description = load(stream);
++    if (!description.has_value())
++        return false;
++
++    evalFile.current        = evalFile.defaultName;
++    evalFile.netDescription = description.value();
++    return true;
++}
++#endif
++
++
+ void Network::initialize() { initialized = true; }
+ 
+ 
+--- a/src/engine.h	2026-11-02 14:07:11.708391027 +0000
++++ b/src/engine.h	2026-11-02 14:10:40.922473777 +0000
+@@ -97,6 +97,10 @@
+     void                                 verify_network() const;
+     std::unique_ptr<Eval::NNUE::Network> get_default_network();
+     void                                 load_network(const std::filesystem::path& file);
++#ifdef SOLACE_WASM
++    // Solace: load the network from memory, no file involved.
++    bool load_network_from_memory(const void* data, usize size);
++#endif
+     void save_network(const std::optional<std::filesystem::path>& file);
+ 
+     // utility functions
+--- a/src/engine.cpp	2026-11-02 14:07:11.708391027 +0000
++++ b/src/engine.cpp	2026-11-02 14:10:40.926473804 +0000
+@@ -314,6 +314,20 @@
+     threads.ensure_network_replicated();
+ }
+ 
++#ifdef SOLACE_WASM
++bool Engine::load_network_from_memory(const void* data, usize size) {
++    bool loaded = true;
++
++    network.modify_and_replicate([&](NN::Network& network_) {
++        loaded = loaded && network_.load_from_memory(data, size, networkFile);
++    });
++
++    threads.clear();
++    threads.ensure_network_replicated();
++    return loaded;
++}
++#endif
++
+ void Engine::save_network(const std::optional<std::filesystem::path>& file) {
+     network.modify_and_replicate(
+       [&file, this](NN::Network& network_) { network_.save(networkFile, file); });
+--- a/src/uci.h	2026-11-02 14:07:11.716567070 +0000
++++ b/src/uci.h	2026-11-02 14:10:40.926473804 +0000
+@@ -55,6 +55,13 @@
+ 
+     auto& engine_options() { return engine.get_options(); }
+ 
++#ifdef SOLACE_WASM
++    // Solace: the WebAssembly bridge loads the network from a byte buffer.
++    bool load_network_from_memory(const void* data, usize size) {
++        return engine.load_network_from_memory(data, size);
++    }
++#endif
++
+    private:
+     Engine      engine;
+     CommandLine cli;

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16181d">
+<title>SOLACE Chess Engine</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<header>
+  <h1>SOLACE <span class="tag">chess engine</span></h1>
+  <div class="header-actions">
+    <button id="flip" type="button" title="Rotate the board">Flip</button>
+    <button id="newgame" type="button">New game</button>
+  </div>
+</header>
+
+<main>
+  <section class="board-panel">
+    <div id="board" class="board" aria-label="Chess board"></div>
+    <div id="status" class="status">White to move</div>
+
+    <div class="controls">
+      <label class="control">
+        <span>SOLACE plays</span>
+        <select id="engineSide">
+          <option value="black" selected>Black</option>
+          <option value="white">White</option>
+          <option value="both">Both sides</option>
+          <option value="none">Nobody (analysis)</option>
+        </select>
+      </label>
+
+      <label class="control">
+        <span>Search</span>
+        <select id="searchMode">
+          <option value="time" selected>By time</option>
+          <option value="depth">By depth</option>
+        </select>
+      </label>
+
+      <label class="control" id="timeControl">
+        <span>Think time</span>
+        <select id="thinkTime">
+          <option value="250">0.25 s</option>
+          <option value="500">0.5 s</option>
+          <option value="1000" selected>1 s</option>
+          <option value="2000">2 s</option>
+          <option value="5000">5 s</option>
+        </select>
+      </label>
+
+      <label class="control hidden" id="depthControl">
+        <span>Depth</span>
+        <select id="depth">
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5" selected>5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+        </select>
+      </label>
+
+      <label class="control">
+        <span>Promotion</span>
+        <select id="promotion">
+          <option value="q" selected>Queen</option>
+          <option value="r">Rook</option>
+          <option value="b">Bishop</option>
+          <option value="n">Knight</option>
+        </select>
+      </label>
+
+      <div class="control buttons">
+        <button id="undo" type="button">Undo</button>
+        <button id="hint" type="button">Hint</button>
+        <button id="copyfen" type="button">Copy FEN</button>
+      </div>
+    </div>
+  </section>
+
+  <aside class="info-panel">
+    <div class="card">
+      <h2>Evaluation</h2>
+      <div class="eval-bar"><div id="evalFill" class="eval-fill"></div></div>
+      <div id="evalText" class="eval-text">+0.00</div>
+      <dl class="stats">
+        <dt>Depth</dt><dd id="statDepth">-</dd>
+        <dt>Score</dt><dd id="statScore">-</dd>
+        <dt>Nodes</dt><dd id="statNodes">-</dd>
+        <dt>Speed</dt><dd id="statNps">-</dd>
+        <dt>Time</dt><dd id="statTime">-</dd>
+      </dl>
+    </div>
+
+    <div class="card">
+      <h2>Principal variation</h2>
+      <div id="pv" class="pv">-</div>
+      <h2>Position (FEN)</h2>
+      <div id="fen" class="fen"></div>
+      <div class="row">
+        <input id="fenInput" type="text" placeholder="paste a FEN and press Load" spellcheck="false">
+        <button id="loadFen" type="button">Load</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Move list</h2>
+      <div id="movelist" class="movelist"></div>
+    </div>
+
+    <div class="card">
+      <h2>Engine log</h2>
+      <pre id="log" class="log"></pre>
+      <button id="selftest" type="button">Run perft self-test</button>
+      <div id="selftestResult" class="selftest"></div>
+    </div>
+  </aside>
+</main>
+
+<footer>
+  <span>SOLACE runs entirely in your browser, in a Web Worker. No server, no network, no external services.</span>
+</footer>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
