@@ -281,6 +281,15 @@ Consequences, applied below: **ordering work is closed for now**, pruning is
 deferred until it can be guarded properly, and **evaluation work moves to the
 front**.
 
+**Passed pawns were tested first; neither candidate is kept** (STRENGTH.md §10).
+A broad feature bundle lost **-163 Elo** at 240 equal-node games (95 %:
+-209..-122). A restrained rank/protection/connected/rook refinement scored
++22 Elo, but was inconclusive (95 %: -15..+59) and failed the pinned startpos
+tree-size guard at +43.5 %. The evaluator is unchanged: do not call the latter a
+win based on its positive point estimate. Continue evaluation in the requested
+order, with king safety next; every proposal still needs a clean regression run
+and a 200+ game match.
+
 ## 7. The plan
 
 Each phase lists the change, the expected benefit (labelled), the risk, and the

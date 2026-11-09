@@ -500,3 +500,69 @@ Three conclusions, each of which rules out a line of work:
   searched. Those are the conditions under which the 163 Elo was lost.
 * **Evaluation tuning is now the highest-return target** that does not depend on
   the tree shape at all - which is why it can proceed in parallel, as agreed.
+
+---
+
+## 10. Passed-pawn evaluation experiments (both rejected)
+
+The first evaluation term in the new priority order was passed pawns. Two
+variants were implemented in isolated worktrees, tested for evaluation sanity,
+and played at **equal nodes** (`nodes:15000`, 240 games, paired openings,
+colours swapped). Neither is in the engine.
+
+### 10.1 Broad feature bundle — clear loss
+
+This candidate increased the rank bonuses and added pawn protection, a local
+connected-passer test, a stronger rank-weighted king-distance term, rook-behind
+and rook-blockade adjustments, candidate passers, own-piece blockades, and
+material-dependent endgame scaling. The goal was to cover the cases the old term
+missed; this was too much at once and too optimistic.
+
+| result | candidate A | baseline |
+| --- | ---: | ---: |
+| wins / losses / draws | 45 / 150 / 45 | 150 / 45 / 45 |
+| score | 67.5 / 240 (28.1 %) | 172.5 / 240 |
+| Elo | **-163** | |
+| 95 % interval | **-209 .. -122** | |
+| illegal moves | 0 | |
+
+**Reject.** The loss is large and statistically clear. Candidate A's full suite
+passed (175/175 at the time), so this was a strength failure, not a correctness
+failure. No part of this bundle ships.
+
+### 10.2 Conservative refinement — inconclusive, also rejected
+
+The second variant isolated smaller changes: modestly lifted the passed-pawn
+rank curve, awarded a pawn-protected passer, restricted the connected bonus to a
+neighbouring pawn within one rank, and added a small middlegame rook-behind
+bonus. It retained the existing king-distance term and did not add candidate
+passers or the broad bundle's extra scaling.
+
+| result | candidate B | baseline |
+| --- | ---: | ---: |
+| wins / losses / draws | 90 / 75 / 75 | 75 / 90 / 75 |
+| score | 127.5 / 240 (53.1 %) | 112.5 / 240 |
+| Elo | **+22** | |
+| 95 % interval | **-15 .. +59** | |
+| illegal moves | 0 | |
+
+This is **inconclusive**, not evidence of a gain. It also failed the pinned
+depth-10 tree-size regression guard on startpos: 324,531 nodes versus the
+226,117 baseline (+43.5 %, over the 25 % tolerance). On the seven-position
+benchmark it searched 2,374,661 nodes versus 2,352,476 (+0.9 %), at essentially
+the same speed in a paired run (160 vs 161 knps). That aggregate is not enough
+to excuse the per-position regression.
+
+Candidate B's evaluator-specific assertions passed (17/17), and its UCI,
+UCI-process, and browser suites passed (36/36, 10/10, 8/8); the full suite was
+172 passed, **1 failed** (the pinned startpos tree-size guard). It does not ship.
+
+### 10.3 Decision
+
+**No validated passed-pawn improvement yet.** The broad approach demonstrably
+loses; the restrained one is statistically unresolved and fails an existing
+search-quality guard. Both are rejected rather than being promoted on a positive
+point estimate. The baseline evaluator is unchanged. Revisit passed pawns only
+with a smaller, attributable change and a match that clears both the strength
+and regression gates; otherwise continue to king safety, the next requested
+priority.
