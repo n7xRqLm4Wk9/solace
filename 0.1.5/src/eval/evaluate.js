@@ -249,6 +249,8 @@ export const WEIGHTS = {
   kingAttackWeight: [0, 1, 2, 2, 3, 5, 0], // per piece attacking the king ring
   kingDangerDivisor: 4,
   kingDangerMax: 320,
+  // Queenless attacks are dangerous, but substantially less likely to mate.
+  kingDangerNoQueenPercent: 75,
   kingQueenNearMg: 14,
   passedKingSupportEg: 5,
   // A passed pawn that is blocked by any piece is worth much less.
@@ -776,7 +778,14 @@ function evaluateBothSides(position) {
   for (let colour = 0; colour < 2; colour++) {
     const danger = totals.danger[colour];
     if (danger > 0) {
-      totals.mg[colour] -= Math.min((danger * danger) / WEIGHTS.kingDangerDivisor, WEIGHTS.kingDangerMax);
+      let penalty = Math.min((danger * danger) / WEIGHTS.kingDangerDivisor, WEIGHTS.kingDangerMax);
+      const attacker = colour ^ 1;
+      const attackerQueens = position.piecesLo[attacker * 6 + QUEEN - 1]
+        | position.piecesHi[attacker * 6 + QUEEN - 1];
+      if (attackerQueens === 0) {
+        penalty *= WEIGHTS.kingDangerNoQueenPercent / 100;
+      }
+      totals.mg[colour] -= penalty;
     }
   }
 }

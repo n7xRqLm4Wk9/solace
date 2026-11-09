@@ -132,3 +132,15 @@ test('the tempo bonus favours the side to move', () => {
   assertEqual(evaluate(white), evaluate(black), 'tempo is the same for whoever moves');
   assert(evaluate(white) > 0, 'the side to move gets a small plus');
 });
+
+test('king-ring pressure is lower when the attacking side has no queen', () => {
+  const noQueenUnderAttack = new Position().setFen('4kr1r/8/8/2b5/8/5n2/8/6K1 w - - 0 1');
+  const noQueenSafe = new Position().setFen('rr2k3/2b5/8/8/8/2n5/8/6K1 w - - 0 1');
+  const queenUnderAttack = new Position().setFen('1q2kr1r/8/8/2b5/8/5n2/8/6K1 w - - 0 1');
+  const queenSafe = new Position().setFen('rqr1k3/2b5/8/8/8/2n5/8/6K1 w - - 0 1');
+  const noQueenPressure = evaluateAbsolute(noQueenUnderAttack) - evaluateAbsolute(noQueenSafe);
+  const queenPressure = evaluateAbsolute(queenUnderAttack) - evaluateAbsolute(queenSafe);
+  assert(noQueenPressure < 0, 'multiple attackers should still pressure a king without queens');
+  assert(queenPressure < noQueenPressure,
+    `the same ring pressure should matter more with a queen (${queenPressure} vs ${noQueenPressure})`);
+});

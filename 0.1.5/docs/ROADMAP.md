@@ -285,10 +285,16 @@ front**.
 A broad feature bundle lost **-163 Elo** at 240 equal-node games (95 %:
 -209..-122). A restrained rank/protection/connected/rook refinement scored
 +22 Elo, but was inconclusive (95 %: -15..+59) and failed the pinned startpos
-tree-size guard at +43.5 %. The evaluator is unchanged: do not call the latter a
-win based on its positive point estimate. Continue evaluation in the requested
-order, with king safety next; every proposal still needs a clean regression run
-and a 200+ game match.
+tree-size guard at +43.5 %. The evaluator was unchanged by either passer candidate: do not call the latter
+a win based on its positive point estimate.
+
+**King safety, focused first change:** attenuate the existing ring-danger
+penalty to 75 % when the attacking side has no queen. At equal nodes over 240
+games it scored 120-45-75 (**+112 match-implied Elo**, 95 %: +76..+151), with
+zero illegal moves. It adds +1.4 % nodes to the fixed-depth benchmark; the paired
+nps difference was -1.2 %. All 169 tests pass. Details: STRENGTH.md §11. Pawn
+shield, open-file and attack-unit weights remain untouched pending separate
+measurements.
 
 ## 7. The plan
 

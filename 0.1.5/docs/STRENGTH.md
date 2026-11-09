@@ -566,3 +566,45 @@ point estimate. The baseline evaluator is unchanged. Revisit passed pawns only
 with a smaller, attributable change and a match that clears both the strength
 and regression gates; otherwise continue to king safety, the next requested
 priority.
+
+
+---
+
+## 11. King-safety experiment: queenless attack taper (kept)
+
+The first focused king-safety change adjusts the existing nonlinear
+king-ring-danger penalty, and nothing else. When the attacking side has no
+queen, the computed penalty is multiplied by **75 %** instead of being applied
+at full strength. The weighted attack units, pawn shield, open-file terms,
+king-ring masks, cap, and all other terms are untouched. The rationale is that
+minor/rook pressure still matters without queens, but is less likely to become a
+mating attack; the reduction is deliberately partial.
+
+| equal-node match | result |
+| --- | --- |
+| games / limit | 240 / `nodes:15000` |
+| candidate wins / losses / draws | 120 / 45 / 75 |
+| candidate score | **157.5 / 240 (65.6 %)** |
+| match-implied Elo | **+112** |
+| 95 % interval | **+76 .. +151** |
+| illegal moves | 0 |
+| elapsed | 634 s |
+
+This is a clear positive result in this paired-opening, equal-node match; it is a
+match estimate, not a claim about SOLACE's absolute playing strength. The
+candidate's depth-10 seven-position workload was 2,384,848 nodes versus
+2,352,476 baseline (**+1.4 %**). A paired timing run was 4,925 ms / 484 knps
+versus 4,805 ms / 490 knps baseline (**+2.5 % time, -1.2 % nps**), small and
+within timing variability; no large unexplained tree inflation. A preliminary
+50 % taper was not taken to a match because it narrowly failed the pinned
+endgame-size guard (+25.7 %); the kept 75 % taper passes it.
+
+Correctness / compatibility: the new evaluator assertion verifies that
+multiple attackers still pressure a king without a queen, but that comparable
+ring pressure matters more when the attacker has its queen. The complete suite
+passes: **169 passed, 0 failed** (including UCI and browser checks). The change
+adds no allocations, tables, dependencies, or browser-specific code.
+
+**Decision: keep the 75 % queenless taper.** Do not change the pawn-shield,
+open-file, or attack-unit weights in this same round; they remain separate
+experiments for later.
