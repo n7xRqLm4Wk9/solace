@@ -144,3 +144,12 @@ test('king-ring pressure is lower when the attacking side has no queen', () => {
   assert(queenPressure < noQueenPressure,
     `the same ring pressure should matter more with a queen (${queenPressure} vs ${noQueenPressure})`);
 });
+
+test('backward pawns are penalized when their advance square is pawn-controlled', () => {
+  // White's d4 pawn is behind a c2 neighbour and cannot be supported onto d5,
+  // which Black's c6 pawn attacks. Moving that neighbour to c4 supports d5.
+  const backward = new Position().setFen('4k3/8/2p5/8/3P4/8/2P5/4K3 w - - 0 1');
+  const supported = new Position().setFen('4k3/8/2p5/8/2PP4/8/8/4K3 w - - 0 1');
+  assert(evaluateAbsolute(supported) > evaluateAbsolute(backward) + 32,
+    `supporting the advance square should remove the backward-pawn penalty (${evaluateAbsolute(supported)} vs ${evaluateAbsolute(backward)})`);
+});

@@ -608,3 +608,64 @@ adds no allocations, tables, dependencies, or browser-specific code.
 **Decision: keep the 75 % queenless taper.** Do not change the pawn-shield,
 open-file, or attack-unit weights in this same round; they remain separate
 experiments for later.
+
+
+---
+
+## 12. King open-file gate (rejected)
+
+A small candidate stopped charging the king's open/semi-open-file penalty when
+the opponent had no rook or queen, since an empty file is less dangerous without
+a major attacker. It passed the suite but **lost at equal nodes**:
+
+| result | candidate | baseline |
+| --- | ---: | ---: |
+| wins / losses / draws | 75 / 135 / 30 | 135 / 75 / 30 |
+| score | 90 / 240 (37.5 %) | 150 / 240 |
+| match-implied Elo | **-89** | |
+| 95 % interval | **-133 .. -47** | |
+| illegal moves | 0 | |
+
+**Reject.** The current open-file king penalties remain unconditional as before.
+
+---
+
+## 13. Backward-pawn penalty (kept; fixed-time neutral)
+
+The pawn-structure loop now recognizes a focused backward-pawn case: the pawn is
+not isolated, its advance square is empty and controlled by an enemy pawn, and
+no friendly pawn attacks/supports that advance square. It receives a modest
+**-6 middlegame / -10 endgame** penalty. This leaves passed pawns untouched and
+does not alter the existing isolated/doubled weights.
+
+### Equal-node match
+
+| result | candidate | baseline |
+| --- | ---: | ---: |
+| limit / games | `nodes:15000` / 240 | 240 |
+| wins / losses / draws | 135 / 90 / 15 | 90 / 135 / 15 |
+| score | **142.5 / 240 (59.4 %)** | 97.5 / 240 |
+| match-implied Elo | **+66** | |
+| 95 % interval | **+23 .. +111** | |
+| illegal moves | 0 | |
+| elapsed | 657 s | |
+
+### Fixed-time checks (two 240-game matches, `movetime:70`)
+
+| match | wins / losses / draws | score | Elo (95 % interval) |
+| --- | --- | --- | --- |
+| 1 | 82 / 88 / 70 | 117 / 240 (48.8 %) | -9 (-46 .. +28) |
+| 2 | 94 / 89 / 57 | 122.5 / 240 (51.0 %) | +7 (-31 .. +46) |
+| pooled | 176 / 177 / 127 | 239.5 / 480 (49.9 %) | **-1 (-27 .. +26)** |
+
+The fixed-time result is **neutral/inconclusive**, not a demonstrated strength
+gain or loss. In the depth-10 seven-position workload, nodes fell from 2,384,848
+to 1,886,047 (**-20.9 %**); best-of-five-per-position time fell from 4,725.6 to
+3,605.9 ms and aggregate knps rose 505 -> 523. Those are workload results, not
+substitutes for the fixed-time match.
+
+Correctness: a regression assertion covers the backward-pawn condition; the full
+suite passes **170/170**, including UCI and browser checks. No allocations or
+new dependencies were added. **Keep this narrowly scoped term** on the
+significant equal-node gain, with the fixed-time neutrality recorded as a
+limitation; do not infer a general Elo gain from the equal-node result alone.

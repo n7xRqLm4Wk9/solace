@@ -231,6 +231,8 @@ export const WEIGHTS = {
   doubledEg: -16,
   isolatedMg: -12,
   isolatedEg: -12,
+  backwardMg: -6,
+  backwardEg: -10,
   supportedMg: 7,
   supportedEg: 5,
   phalanxMg: 4,
@@ -700,9 +702,25 @@ function evaluateBothSides(position) {
           eg += WEIGHTS.doubledEg;
         }
 
-        if (((ADJACENT_FILES_LO[sq] & ownPawnLo) | (ADJACENT_FILES_HI[sq] & ownPawnHi)) === 0) {
+        const hasAdjacentPawn = ((ADJACENT_FILES_LO[sq] & ownPawnLo)
+          | (ADJACENT_FILES_HI[sq] & ownPawnHi)) !== 0;
+        if (!hasAdjacentPawn) {
           mg += WEIGHTS.isolatedMg;
           eg += WEIGHTS.isolatedEg;
+        }
+
+        // A backward pawn is behind its neighbours, cannot be supported on
+        // the advance square, and that square is controlled by an enemy pawn.
+        // Don't double-count isolated pawns or pawns already blocked by a piece.
+        const stopSquare = colour === WHITE ? sq + 8 : sq - 8;
+        if (hasAdjacentPawn && stopSquare >= 0 && stopSquare < 64
+          && position.board[stopSquare] === EMPTY
+          && ((PAWN_ATK_LO_F[cBase + stopSquare] & enemyPawnLo)
+            | (PAWN_ATK_HI_F[cBase + stopSquare] & enemyPawnHi)) !== 0
+          && ((PAWN_ATK_LO_F[oppBase + stopSquare] & ownPawnLo)
+            | (PAWN_ATK_HI_F[oppBase + stopSquare] & ownPawnHi)) === 0) {
+          mg += WEIGHTS.backwardMg;
+          eg += WEIGHTS.backwardEg;
         }
 
         // Supported by a pawn (a pawn of the *enemy* colour attacks this square

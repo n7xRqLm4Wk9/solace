@@ -292,9 +292,16 @@ a win based on its positive point estimate.
 penalty to 75 % when the attacking side has no queen. At equal nodes over 240
 games it scored 120-45-75 (**+112 match-implied Elo**, 95 %: +76..+151), with
 zero illegal moves. It adds +1.4 % nodes to the fixed-depth benchmark; the paired
-nps difference was -1.2 %. All 169 tests pass. Details: STRENGTH.md §11. Pawn
-shield, open-file and attack-unit weights remain untouched pending separate
-measurements.
+nps difference was -1.2 %. All 169 tests pass. Details: STRENGTH.md §11.
+
+A second king-safety idea (gate open-file penalties on an enemy rook/queen) was
+rejected at equal nodes: **-89 Elo** (95 %: -133..-47; STRENGTH.md §12). Following
+the requested priority, the next pawn-structure change adds a modest backward
+pawn penalty. It scored **+66** at equal nodes (95 %: +23..+111); two 240-game
+fixed-time matches pooled to **-1 Elo** (95 %: -27..+26), so fixed-time is
+neutral, not a claimed gain. The depth-10 workload fell 20.9 % in nodes and the
+full suite passes 170/170 (STRENGTH.md §13). Keep this isolated term, but do not
+extrapolate the equal-node score to fixed-time strength.
 
 ## 7. The plan
 
